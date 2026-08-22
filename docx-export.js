@@ -37,8 +37,11 @@
       body.push(paragraph(`${label}（${group.length}）`, "Heading1"));
       group.forEach((item, index) => {
         body.push(paragraph(`${index + 1}. ${item.question}`, "Heading2"));
-        const meta = [item.site, formatDate(item.updatedAt)].filter(Boolean).join(" · ");
+        const meta = [item.site, item.conversationTitle || item.sourceTitle, formatDate(item.updatedAt)]
+          .filter(Boolean).join(" · ");
         if (meta) body.push(paragraph(meta, "Subtitle"));
+        const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
+        if (tags.length) body.push(paragraph(`标签：${tags.map((tag) => `#${tag}`).join("  ")}`, "Normal"));
         if (item.context) body.push(paragraph(`相关上下文：${item.context}`, "Normal"));
         if (item.notes) body.push(paragraph(`学习笔记：${item.notes}`, "Normal"));
       });

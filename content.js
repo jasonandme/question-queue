@@ -52,6 +52,7 @@
         <details id="qqDetails">
           <summary>补充上下文与学习笔记</summary>
           <label>相关上下文<textarea id="qqContext" rows="3" placeholder="选中回答文字并右键记录时，会自动放到这里"></textarea></label>
+          <label>标签<input id="qqTags" type="text" placeholder="例如：工作, 学习方法, 待验证"></label>
           <label>学习笔记<textarea id="qqNotes" rows="2" placeholder="写下自己的理解、结论或仍不确定之处"></textarea></label>
         </details>
         <div class="qq-compose-actions">
@@ -101,7 +102,7 @@
   const els = {
     fab: $("#qqFab"), fabCount: $("#qqFabCount"), panel: $("#qqPanel"),
     backdrop: $("#qqBackdrop"), close: $("#qqClose"), question: $("#qqQuestion"),
-    context: $("#qqContext"), notes: $("#qqNotes"), details: $("#qqDetails"),
+    context: $("#qqContext"), tags: $("#qqTags"), notes: $("#qqNotes"), details: $("#qqDetails"),
     save: $("#qqSave"), cancelEdit: $("#qqCancelEdit"), tabs: $("#qqTabs"),
     search: $("#qqSearch"), fillAll: $("#qqFillAll"), bulkBar: $("#qqBulkBar"),
     selectAll: $("#qqSelectAll"), fillSelected: $("#qqFillSelected"), list: $("#qqList"),
@@ -277,6 +278,13 @@
       notes.textContent = `笔记：${item.notes}`;
       card.appendChild(notes);
     }
+    const itemTags = normalizeTags(item.tags);
+    if (itemTags.length) {
+      const tags = document.createElement("p");
+      tags.className = "qq-card-tags";
+      tags.textContent = itemTags.map((tag) => `#${tag}`).join("  ");
+      card.appendChild(tags);
+    }
 
     const actions = document.createElement("div");
     actions.className = "qq-card-actions";
@@ -310,6 +318,7 @@
       if (item) Object.assign(item, {
         question,
         context: els.context.value.trim(),
+        tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(),
         updatedAt: now
       });
@@ -319,11 +328,14 @@
         id: crypto.randomUUID(),
         question,
         context: els.context.value.trim(),
+        tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(),
         status: "pending",
         site: SITE_NAMES[location.hostname] || location.hostname,
         sourceTitle: document.title,
         sourceUrl: location.href,
+        conversationId: conversationKey(location.href, document.title),
+        conversationTitle: cleanConversationTitle(document.title),
         createdAt: now,
         updatedAt: now
       });
@@ -345,6 +357,7 @@
     editingId = item.id;
     els.question.value = item.question || "";
     els.context.value = item.context || "";
+    els.tags.value = normalizeTags(item.tags).join(", ");
     els.notes.value = item.notes || "";
     els.details.open = Boolean(item.context || item.notes);
     els.save.textContent = "保存修改";
@@ -357,6 +370,7 @@
     editingId = null;
     els.question.value = "";
     els.context.value = "";
+    els.tags.value = "";
     els.notes.value = "";
     els.details.open = false;
     els.save.textContent = "保存疑问";
@@ -542,7 +556,7 @@
     const query = els.search.value.trim().toLocaleLowerCase();
     return items
       .filter((item) => item.status === activeStatus)
-      .filter((item) => !query || [item.question, item.context, item.notes, item.site]
+      .filter((item) => !query || [item.question, item.context, item.notes, item.site, item.conversationTitle, normalizeTags(item.tags).join(" ")]
         .some((value) => String(value || "").toLocaleLowerCase().includes(query)))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }
@@ -732,6 +746,37 @@
     return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
   }
 
+  function conversationKey(url, title) {
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/+$/, "") || "/";
+      if (path !== "/") return `${parsed.origin}${path}`;
+    } catch {
+      // Use title when the URL is unavailable.
+    }
+    return `title:${location.hostname}:${cleanConversationTitle(title)}`;
+  }
+
+  function cleanConversationTitle(title) {
+    let value = String(title || "").trim();
+    const site = SITE_NAMES[location.hostname] || location.hostname;
+    [site, "ChatGPT", "Claude", "Gemini", "DeepSeek", "Grok", "Poe", "Microsoft Copilot", "豆包", "腾讯元宝"]
+      .filter(Boolean)
+      .forEach((suffix) => {
+        value = value.replace(new RegExp(`\\s*[-|·—–]\\s*${String(suffix).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "").trim();
+      });
+    return value || `${site} 未命名对话`;
+  }
+
+  function parseTags(value) {
+    return normalizeTags(String(value || "").split(/[,，;；\n]+/));
+  }
+
+  function normalizeTags(value) {
+    const list = Array.isArray(value) ? value : (value ? [value] : []);
+    return Array.from(new Set(list.map((tag) => String(tag).trim().replace(/^#\s*/, "")).filter(Boolean))).slice(0, 20);
+  }
+
   function formatTime(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
@@ -784,6 +829,7 @@
       .qq-card-question { margin: 0; color: #302c38; font-size: 14px; font-weight: 600; white-space: pre-wrap; }
       .qq-card-context, .qq-card-notes { display: -webkit-box; overflow: hidden; margin: 8px 0 0; color: #817b8a; font-size: 11px; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
       .qq-card-notes { color: #5f776b; }
+      .qq-card-tags { margin: 7px 0 0; color: #6557b8; font-size: 10px; }
       .qq-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
       .qq-small { padding: 5px 8px; color: #625c6d; background: #f2f0f5; border: 0; border-radius: 7px; font-size: 11px; }
       .qq-small:hover { background: #e9e5ef; }

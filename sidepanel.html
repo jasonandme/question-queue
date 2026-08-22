@@ -30,6 +30,10 @@
             <textarea id="context" rows="3" placeholder="在回答中划词后右键“记录为追问”，选中文字会自动放到这里"></textarea>
             <small>它保存“这个问题是由回答中的哪段话引发的”，方便以后回看问题来源。</small>
           </label>
+          <label>标签
+            <input id="tags" type="text" list="tagSuggestions" placeholder="例如：工作, 学习方法, 待验证">
+            <datalist id="tagSuggestions"></datalist>
+          </label>
           <label>学习笔记<textarea id="notes" rows="2" placeholder="写下自己的理解、结论或仍不确定之处"></textarea></label>
         </details>
         <div class="row end">
@@ -39,8 +43,16 @@
       </section>
       <nav class="statuses" id="statuses" aria-label="问题状态"></nav>
       <div class="toolbar">
-        <input id="search" type="search" placeholder="搜索疑问、上下文或笔记">
+        <input id="search" type="search" placeholder="搜索疑问、对话或标签">
         <button class="button primary" id="fillAll">一键填入待输入</button>
+      </div>
+      <div class="filters">
+        <label>对话
+          <select id="conversationFilter"><option value="all">全部对话</option></select>
+        </label>
+        <label>标签
+          <select id="tagFilter"><option value="all">全部标签</option></select>
+        </label>
       </div>
       <div class="bulkbar" id="bulkbar">
         <button class="button ghost" id="selectAll">全选当前</button>

@@ -20,6 +20,8 @@
   let items = [];
   let mindMap = null;
   let activeStatus = "pending";
+  let activeConversation = "all";
+  let activeTag = "all";
   let selectedIds = new Set();
   let editingId = null;
   let captureMeta = null;
@@ -27,7 +29,8 @@
 
   const $ = (selector) => document.querySelector(selector);
   const els = {
-    question: $("#question"), context: $("#context"), notes: $("#notes"), details: $("#details"),
+    question: $("#question"), context: $("#context"), tags: $("#tags"), notes: $("#notes"), details: $("#details"),
+    tagSuggestions: $("#tagSuggestions"), conversationFilter: $("#conversationFilter"), tagFilter: $("#tagFilter"),
     save: $("#save"), cancelEdit: $("#cancelEdit"), statuses: $("#statuses"), search: $("#search"),
     fillAll: $("#fillAll"), bulkbar: $("#bulkbar"), selectAll: $("#selectAll"),
     fillSelected: $("#fillSelected"), list: $("#list"), word: $("#word"), import: $("#import"),
@@ -58,6 +61,16 @@
     els.save.addEventListener("click", saveEditor);
     els.cancelEdit.addEventListener("click", resetEditor);
     els.search.addEventListener("input", render);
+    els.conversationFilter.addEventListener("change", () => {
+      activeConversation = els.conversationFilter.value;
+      selectedIds.clear();
+      render();
+    });
+    els.tagFilter.addEventListener("change", () => {
+      activeTag = els.tagFilter.value;
+      selectedIds.clear();
+      render();
+    });
     els.fillAll.addEventListener("click", () => fillItems(
       items.filter((item) => item.status === "pending")
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
@@ -123,6 +136,7 @@
 
   function render() {
     renderStatuses();
+    renderFilters();
     renderList();
     renderBulkbar();
     const pending = items.filter((item) => item.status === "pending").length;
@@ -147,12 +161,49 @@
     });
   }
 
+  function renderFilters() {
+    const conversations = new Map();
+    items.forEach((item) => {
+      const key = conversationKeyForItem(item);
+      const existing = conversations.get(key);
+      if (!existing || new Date(item.updatedAt) > new Date(existing.updatedAt)) {
+        conversations.set(key, { title: conversationTitleForItem(item), updatedAt: item.updatedAt });
+      }
+    });
+    if (activeConversation !== "all" && !conversations.has(activeConversation)) activeConversation = "all";
+    els.conversationFilter.replaceChildren(option("all", `全部对话（${conversations.size}）`));
+    Array.from(conversations.entries())
+      .sort((a, b) => new Date(b[1].updatedAt) - new Date(a[1].updatedAt))
+      .forEach(([key, value]) => els.conversationFilter.appendChild(option(key, value.title)));
+    els.conversationFilter.value = activeConversation;
+
+    const tags = Array.from(new Set(items.flatMap((item) => normalizeTags(item.tags)))).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    if (activeTag !== "all" && !tags.includes(activeTag)) activeTag = "all";
+    els.tagFilter.replaceChildren(option("all", `全部标签（${tags.length}）`));
+    els.tagSuggestions.replaceChildren();
+    tags.forEach((tag) => {
+      els.tagFilter.appendChild(option(tag, tag));
+      els.tagSuggestions.appendChild(option(tag, tag));
+    });
+    els.tagFilter.value = activeTag;
+  }
+
+  function option(value, label) {
+    const node = document.createElement("option");
+    node.value = value;
+    node.textContent = label;
+    return node;
+  }
+
   function getVisibleItems() {
     const query = els.search.value.trim().toLocaleLowerCase();
     return items
       .filter((item) => item.status === activeStatus)
-      .filter((item) => !query || [item.question, item.context, item.notes, item.site]
-        .some((value) => String(value || "").toLocaleLowerCase().includes(query)))
+      .filter((item) => activeConversation === "all" || conversationKeyForItem(item) === activeConversation)
+      .filter((item) => activeTag === "all" || normalizeTags(item.tags).includes(activeTag))
+      .filter((item) => !query || [
+        item.question, item.context, item.notes, item.site, conversationTitleForItem(item), normalizeTags(item.tags).join(" ")
+      ].some((value) => String(value || "").toLocaleLowerCase().includes(query)))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }
 
@@ -166,7 +217,27 @@
       els.list.appendChild(empty);
       return;
     }
-    visible.forEach((item) => els.list.appendChild(createItem(item)));
+    const groups = new Map();
+    visible.forEach((item) => {
+      const key = conversationKeyForItem(item);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    groups.forEach((groupItems) => {
+      const group = document.createElement("section");
+      group.className = "conversation-group";
+      const head = document.createElement("header");
+      head.className = "conversation-head";
+      const heading = document.createElement("h3");
+      heading.textContent = conversationTitleForItem(groupItems[0]);
+      heading.title = heading.textContent;
+      const count = document.createElement("span");
+      count.textContent = `${groupItems.length} 条`;
+      head.append(heading, count);
+      group.appendChild(head);
+      groupItems.forEach((item) => group.appendChild(createItem(item)));
+      els.list.appendChild(group);
+    });
   }
 
   function createItem(item) {
@@ -215,6 +286,24 @@
       notes.textContent = `笔记：${item.notes}`;
       card.appendChild(notes);
     }
+    const itemTags = normalizeTags(item.tags);
+    if (itemTags.length) {
+      const tags = document.createElement("div");
+      tags.className = "item-tags";
+      itemTags.forEach((tag) => {
+        const chip = document.createElement("button");
+        chip.className = "tag-chip";
+        chip.textContent = `# ${tag}`;
+        chip.title = `只看标签：${tag}`;
+        chip.addEventListener("click", () => {
+          activeTag = tag;
+          selectedIds.clear();
+          render();
+        });
+        tags.appendChild(chip);
+      });
+      card.appendChild(tags);
+    }
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
@@ -246,15 +335,18 @@
     if (editingId) {
       const item = items.find((entry) => entry.id === editingId);
       if (item) Object.assign(item, {
-        question, context: els.context.value.trim(), notes: els.notes.value.trim(), updatedAt: now
+        question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
+        notes: els.notes.value.trim(), updatedAt: now
       });
       showToast("已更新");
     } else {
-      const source = captureMeta || await currentTabMeta();
+      const source = normalizeSourceMeta(captureMeta || await currentTabMeta());
       items.push({
-        id: crypto.randomUUID(), question, context: els.context.value.trim(), notes: els.notes.value.trim(),
-        status: "pending", site: source.site, sourceTitle: source.sourceTitle,
-        sourceUrl: source.sourceUrl, createdAt: now, updatedAt: now
+        id: crypto.randomUUID(), question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
+        notes: els.notes.value.trim(), status: "pending", site: source.site,
+        sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl,
+        conversationId: source.conversationId, conversationTitle: source.conversationTitle,
+        createdAt: now, updatedAt: now
       });
       activeStatus = "pending";
       showToast("已加入待输入清单");
@@ -267,6 +359,7 @@
     editingId = item.id;
     els.question.value = item.question || "";
     els.context.value = item.context || "";
+    els.tags.value = normalizeTags(item.tags).join(", ");
     els.notes.value = item.notes || "";
     els.details.open = Boolean(item.context || item.notes);
     els.save.textContent = "保存修改";
@@ -280,6 +373,7 @@
     captureMeta = null;
     els.question.value = "";
     els.context.value = "";
+    els.tags.value = "";
     els.notes.value = "";
     els.details.open = false;
     els.save.textContent = "保存疑问";
@@ -448,7 +542,7 @@
 
   function exportJson() {
     const payload = JSON.stringify({
-      schemaVersion: 3, exportedAt: new Date().toISOString(), mindMap, items
+      schemaVersion: 4, exportedAt: new Date().toISOString(), mindMap, items
     }, null, 2);
     downloadBlob(new Blob([payload], { type: "application/json" }),
       `question-queue-${new Date().toISOString().slice(0, 10)}.json`);
@@ -529,11 +623,64 @@
   async function currentTabMeta() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const host = hostname(tab?.url);
-    return {
+    return normalizeSourceMeta({
       site: SITE_NAMES[host] || host || "其他模型",
       sourceTitle: tab?.title || "",
       sourceUrl: tab?.url || ""
+    });
+  }
+
+  function normalizeSourceMeta(source = {}) {
+    const site = source.site || SITE_NAMES[hostname(source.sourceUrl)] || hostname(source.sourceUrl) || "其他模型";
+    const sourceTitle = String(source.sourceTitle || "");
+    const sourceUrl = String(source.sourceUrl || "");
+    return {
+      site, sourceTitle, sourceUrl,
+      conversationId: source.conversationId || conversationKey(sourceUrl, sourceTitle, site),
+      conversationTitle: source.conversationTitle || cleanConversationTitle(sourceTitle, site)
     };
+  }
+
+  function conversationKeyForItem(item) {
+    return item.conversationId || conversationKey(item.sourceUrl, item.sourceTitle, item.site);
+  }
+
+  function conversationTitleForItem(item) {
+    return item.conversationTitle || cleanConversationTitle(item.sourceTitle, item.site) || item.site || "未识别的对话";
+  }
+
+  function conversationKey(url, title, site) {
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/+$/, "") || "/";
+      if (path !== "/") return `${parsed.origin}${path}`;
+    } catch {
+      // Fall through to a title-based key for legacy or missing URLs.
+    }
+    return `title:${site || "other"}:${cleanConversationTitle(title, site) || "untitled"}`;
+  }
+
+  function cleanConversationTitle(title, site) {
+    let value = String(title || "").trim();
+    const suffixes = [site, "ChatGPT", "Claude", "Gemini", "DeepSeek", "Grok", "Poe", "Microsoft Copilot", "豆包", "腾讯元宝"];
+    suffixes.filter(Boolean).forEach((suffix) => {
+      value = value.replace(new RegExp(`\\s*[-|·—–]\\s*${escapeRegExp(suffix)}\\s*$`, "i"), "").trim();
+    });
+    if (!value || value.toLocaleLowerCase() === String(site || "").toLocaleLowerCase()) return site ? `${site} 未命名对话` : "未命名对话";
+    return value;
+  }
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function parseTags(value) {
+    return normalizeTags(String(value || "").split(/[,，;；\n]+/));
+  }
+
+  function normalizeTags(value) {
+    const list = Array.isArray(value) ? value : (value ? [value] : []);
+    return Array.from(new Set(list.map((tag) => String(tag).trim().replace(/^#\s*/, "")).filter(Boolean))).slice(0, 20);
   }
 
   function hostname(url) {
