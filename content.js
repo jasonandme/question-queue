@@ -3,6 +3,7 @@
   window.__QUESTION_QUEUE_LOADED__ = true;
 
   const STORAGE_KEY = "questionQueueItems";
+  const MINDMAP_KEY = "questionQueueMindMap";
   const STATUS = {
     pending: { label: "待输入", color: "#7C5CFC" },
     inserted: { label: "已输入", color: "#168AAD" },
@@ -24,9 +25,11 @@
 
   let items = [];
   let activeStatus = "pending";
+  let selectedIds = new Set();
   let editingId = null;
   let answerWatch = null;
   let panelOpen = false;
+  let mindMap = null;
 
   const host = document.createElement("div");
   host.id = "question-queue-host";
@@ -48,7 +51,7 @@
         <textarea id="qqQuestion" rows="3" placeholder="记录当前回答引发的新疑问…"></textarea>
         <details id="qqDetails">
           <summary>补充上下文与学习笔记</summary>
-          <label>相关上下文<textarea id="qqContext" rows="3" placeholder="划词记录时会自动带入"></textarea></label>
+          <label>相关上下文<textarea id="qqContext" rows="3" placeholder="选中回答文字并右键记录时，会自动放到这里"></textarea></label>
           <label>学习笔记<textarea id="qqNotes" rows="2" placeholder="写下自己的理解、结论或仍不确定之处"></textarea></label>
         </details>
         <div class="qq-compose-actions">
@@ -62,15 +65,35 @@
         <input id="qqSearch" type="search" placeholder="搜索疑问或笔记">
         <button class="qq-primary qq-fill" id="qqFillAll">一键填入待输入</button>
       </section>
+      <section class="qq-bulkbar" id="qqBulkBar">
+        <button class="qq-ghost" id="qqSelectAll">全选当前</button>
+        <button class="qq-primary" id="qqFillSelected" disabled>填入所选</button>
+      </section>
       <main class="qq-list" id="qqList"></main>
       <footer class="qq-footer">
         <span>数据仅保存在本机</span>
         <div>
+          <button class="qq-link" id="qqMindMap">思维导图</button>
+          <button class="qq-link" id="qqWord">Word</button>
           <button class="qq-link" id="qqImport">导入</button>
           <button class="qq-link" id="qqExport">导出</button>
           <input class="qq-hidden" id="qqImportFile" type="file" accept="application/json">
         </div>
       </footer>
+      <section class="qq-map-modal" id="qqMapModal" aria-label="问题思维导图">
+        <header class="qq-map-header">
+          <div>
+            <h3>问题思维导图</h3>
+            <p>由 qwen3.8-max 按需分析，仅发送问题文本和状态</p>
+          </div>
+          <button class="qq-icon" id="qqMapClose" aria-label="关闭">×</button>
+        </header>
+        <div class="qq-map-controls">
+          <span id="qqMapTime">尚未生成</span>
+          <button class="qq-primary" id="qqAnalyze">生成思维导图</button>
+        </div>
+        <div class="qq-map-content" id="qqMapContent"></div>
+      </section>
       <div class="qq-toast" id="qqToast"></div>
     </aside>`;
 
@@ -80,9 +103,12 @@
     backdrop: $("#qqBackdrop"), close: $("#qqClose"), question: $("#qqQuestion"),
     context: $("#qqContext"), notes: $("#qqNotes"), details: $("#qqDetails"),
     save: $("#qqSave"), cancelEdit: $("#qqCancelEdit"), tabs: $("#qqTabs"),
-    search: $("#qqSearch"), fillAll: $("#qqFillAll"), list: $("#qqList"),
+    search: $("#qqSearch"), fillAll: $("#qqFillAll"), bulkBar: $("#qqBulkBar"),
+    selectAll: $("#qqSelectAll"), fillSelected: $("#qqFillSelected"), list: $("#qqList"),
     toast: $("#qqToast"), import: $("#qqImport"), export: $("#qqExport"),
-    importFile: $("#qqImportFile")
+    importFile: $("#qqImportFile"), mindMapButton: $("#qqMindMap"),
+    wordButton: $("#qqWord"), mapModal: $("#qqMapModal"), mapClose: $("#qqMapClose"),
+    mapContent: $("#qqMapContent"), mapTime: $("#qqMapTime"), analyze: $("#qqAnalyze")
   };
 
   bindEvents();
@@ -101,9 +127,15 @@
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[STORAGE_KEY]) return;
-    items = Array.isArray(changes[STORAGE_KEY].newValue) ? changes[STORAGE_KEY].newValue : [];
-    render();
+    if (area !== "local") return;
+    if (changes[STORAGE_KEY]) {
+      items = Array.isArray(changes[STORAGE_KEY].newValue) ? changes[STORAGE_KEY].newValue : [];
+      render();
+    }
+    if (changes[MINDMAP_KEY]) {
+      mindMap = changes[MINDMAP_KEY].newValue || null;
+      renderMindMap();
+    }
   });
 
   function bindEvents() {
@@ -112,19 +144,26 @@
     els.backdrop.addEventListener("click", closePanel);
     els.save.addEventListener("click", saveEditor);
     els.cancelEdit.addEventListener("click", resetEditor);
-    els.search.addEventListener("input", renderList);
+    els.search.addEventListener("input", () => { renderList(); renderBulkActions(); });
     els.fillAll.addEventListener("click", fillAllPending);
+    els.selectAll.addEventListener("click", toggleSelectAll);
+    els.fillSelected.addEventListener("click", fillSelectedItems);
     els.export.addEventListener("click", exportItems);
     els.import.addEventListener("click", () => els.importFile.click());
     els.importFile.addEventListener("change", importItems);
+    els.mindMapButton.addEventListener("click", openMindMap);
+    els.wordButton.addEventListener("click", exportWord);
+    els.mapClose.addEventListener("click", closeMindMap);
+    els.analyze.addEventListener("click", analyzeQuestions);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && panelOpen) closePanel();
     });
   }
 
   async function loadItems() {
-    const data = await chrome.storage.local.get(STORAGE_KEY);
+    const data = await chrome.storage.local.get([STORAGE_KEY, MINDMAP_KEY]);
     items = Array.isArray(data[STORAGE_KEY]) ? data[STORAGE_KEY] : [];
+    mindMap = data[MINDMAP_KEY] || null;
     render();
   }
 
@@ -139,6 +178,7 @@
     els.fabCount.classList.toggle("qq-hidden", !pendingCount);
     renderTabs();
     renderList();
+    renderBulkActions();
     els.fillAll.disabled = pendingCount === 0;
     els.fillAll.textContent = pendingCount ? `一键填入待输入（${pendingCount}）` : "暂无待输入";
   }
@@ -153,6 +193,7 @@
       button.textContent = `${config.label} ${count}`;
       button.addEventListener("click", () => {
         activeStatus = key;
+        selectedIds.clear();
         render();
       });
       els.tabs.appendChild(button);
@@ -160,12 +201,7 @@
   }
 
   function renderList() {
-    const query = els.search.value.trim().toLocaleLowerCase();
-    const visible = items
-      .filter((item) => item.status === activeStatus)
-      .filter((item) => !query || [item.question, item.context, item.notes, item.site]
-        .some((value) => String(value || "").toLocaleLowerCase().includes(query)))
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    const visible = getVisibleItems();
 
     els.list.replaceChildren();
     if (!visible.length) {
@@ -185,6 +221,19 @@
 
     const meta = document.createElement("div");
     meta.className = "qq-card-meta";
+    if (item.status === "pending" || item.status === "inserted") {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "qq-select-box";
+      checkbox.checked = selectedIds.has(item.id);
+      checkbox.setAttribute("aria-label", `选择：${item.question}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selectedIds.add(item.id);
+        else selectedIds.delete(item.id);
+        renderBulkActions();
+      });
+      meta.appendChild(checkbox);
+    }
     const source = document.createElement(item.sourceUrl ? "a" : "span");
     source.textContent = item.site || "其他模型";
     if (item.sourceUrl) {
@@ -217,7 +266,10 @@
     const actions = document.createElement("div");
     actions.className = "qq-card-actions";
     if (item.status === "pending") actions.appendChild(actionButton("填入", () => fillItems([item])));
-    if (item.status === "inserted") actions.appendChild(actionButton("标为已回答", () => setStatus(item.id, "answered")));
+    if (item.status === "inserted") {
+      actions.appendChild(actionButton("再次填入", () => fillItems([item])));
+      actions.appendChild(actionButton("标为已回答", () => setStatus(item.id, "answered")));
+    }
     if (item.status === "answered") actions.appendChild(actionButton("标为已掌握", () => setStatus(item.id, "learned"), "accent"));
     if (item.status === "learned") actions.appendChild(actionButton("重新追问", () => setStatus(item.id, "pending")));
     actions.appendChild(actionButton("编辑", () => editItem(item)));
@@ -302,6 +354,7 @@
     item.status = status;
     item.updatedAt = new Date().toISOString();
     item[`${status}At`] = item.updatedAt;
+    selectedIds.delete(id);
     await persist();
   }
 
@@ -309,6 +362,7 @@
     const item = items.find((entry) => entry.id === id);
     if (!item || !confirm(`删除这条疑问？\n\n${item.question}`)) return;
     items = items.filter((entry) => entry.id !== id);
+    selectedIds.delete(id);
     if (editingId === id) resetEditor();
     await persist();
     showToast("已删除");
@@ -341,9 +395,10 @@
       item.insertedAt = now;
       item.updatedAt = now;
     });
+    targetItems.forEach((item) => selectedIds.delete(item.id));
     await persist();
     startAnswerWatch(targetItems.map((item) => item.id));
-    showToast(`已填入 ${targetItems.length} 条疑问，请确认后发送`);
+    showToast(`已追加 ${targetItems.length} 条疑问，请确认后发送`);
     closePanel();
     composer.focus();
   }
@@ -366,21 +421,27 @@
   }
 
   function insertIntoComposer(element, text) {
+    const existing = element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement ? element.value : (element.innerText || element.textContent || "");
+    const separator = existing ? (existing.endsWith("\n") ? "\n" : "\n\n") : "";
+    const addition = `${separator}${text}`;
     if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
       const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-      setter?.call(element, text);
+      setter?.call(element, `${existing}${addition}`);
     } else {
       element.focus();
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(element);
+      range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      document.execCommand("insertText", false, text);
-      if (!element.textContent?.trim()) element.textContent = text;
+      const inserted = document.execCommand("insertText", false, addition);
+      if (!inserted) {
+        element.appendChild(document.createTextNode(addition));
+      }
     }
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: addition }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
@@ -424,8 +485,9 @@
 
   function exportItems() {
     const payload = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
+      mindMap,
       items
     }, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
@@ -450,11 +512,168 @@
         if (item?.id && item?.question && STATUS[item.status]) byId.set(item.id, item);
       });
       items = Array.from(byId.values());
+      if (!Array.isArray(data) && data.mindMap?.branches) {
+        mindMap = data.mindMap;
+        await chrome.storage.local.set({ [MINDMAP_KEY]: mindMap });
+      }
       await persist();
       showToast(`已导入，共 ${items.length} 条`);
     } catch {
       showToast("导入失败：文件格式不正确", true);
     }
+  }
+
+  function getVisibleItems() {
+    const query = els.search.value.trim().toLocaleLowerCase();
+    return items
+      .filter((item) => item.status === activeStatus)
+      .filter((item) => !query || [item.question, item.context, item.notes, item.site]
+        .some((value) => String(value || "").toLocaleLowerCase().includes(query)))
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  }
+
+  function renderBulkActions() {
+    const canBulkFill = activeStatus === "pending" || activeStatus === "inserted";
+    els.bulkBar.classList.toggle("qq-hidden", !canBulkFill);
+    if (!canBulkFill) return;
+    const visible = getVisibleItems();
+    const selected = visible.filter((item) => selectedIds.has(item.id));
+    els.selectAll.disabled = visible.length === 0;
+    els.selectAll.textContent = visible.length && selected.length === visible.length ? "取消全选" : "全选当前";
+    els.fillSelected.disabled = selected.length === 0;
+    const verb = activeStatus === "inserted" ? "再次填入所选" : "填入所选";
+    els.fillSelected.textContent = selected.length ? `${verb}（${selected.length}）` : verb;
+  }
+
+  function toggleSelectAll() {
+    const visible = getVisibleItems();
+    const allSelected = visible.length && visible.every((item) => selectedIds.has(item.id));
+    visible.forEach((item) => {
+      if (allSelected) selectedIds.delete(item.id);
+      else selectedIds.add(item.id);
+    });
+    renderList();
+    renderBulkActions();
+  }
+
+  function fillSelectedItems() {
+    const selected = getVisibleItems().filter((item) => selectedIds.has(item.id));
+    fillItems(selected);
+  }
+
+  function openMindMap() {
+    els.mapModal.classList.add("is-open");
+    renderMindMap();
+  }
+
+  function closeMindMap() {
+    els.mapModal.classList.remove("is-open");
+  }
+
+  async function analyzeQuestions() {
+    if (!items.length) return showToast("还没有可分析的问题", true);
+    els.analyze.disabled = true;
+    els.analyze.textContent = "千问分析中…";
+    try {
+      const safeItems = items.map((item) => ({ id: item.id, question: item.question, status: item.status }));
+      const response = await chrome.runtime.sendMessage({ type: "QQ_ANALYZE_MINDMAP", items: safeItems });
+      if (!response?.ok) throw new Error(response?.error || "智能分析失败");
+      mindMap = {
+        ...response.mindMap,
+        generatedAt: new Date().toISOString(),
+        sourceCount: items.length
+      };
+      await chrome.storage.local.set({ [MINDMAP_KEY]: mindMap });
+      renderMindMap();
+      showToast("思维导图已生成");
+    } catch (error) {
+      showToast(error.message || "智能分析失败", true);
+    } finally {
+      els.analyze.disabled = false;
+      els.analyze.textContent = mindMap ? "重新分析" : "生成思维导图";
+    }
+  }
+
+  function renderMindMap() {
+    if (!els.mapContent) return;
+    els.mapContent.replaceChildren();
+    els.analyze.textContent = mindMap ? "重新分析" : "生成思维导图";
+    els.mapTime.textContent = mindMap?.generatedAt
+      ? `${formatTime(mindMap.generatedAt)} · ${mindMap.sourceCount || items.length} 个问题`
+      : "尚未生成";
+    if (!mindMap?.branches?.length) {
+      const empty = document.createElement("div");
+      empty.className = "qq-map-empty";
+      empty.textContent = "点击“生成思维导图”，千问会把已有问题按主题整理。";
+      els.mapContent.appendChild(empty);
+      return;
+    }
+    const title = document.createElement("h3");
+    title.className = "qq-map-title";
+    title.textContent = mindMap.title || "问题知识结构";
+    els.mapContent.appendChild(title);
+    if (mindMap.summary) {
+      const summary = document.createElement("p");
+      summary.className = "qq-map-summary";
+      summary.textContent = mindMap.summary;
+      els.mapContent.appendChild(summary);
+    }
+    const tree = document.createElement("div");
+    tree.className = "qq-map-tree";
+    mindMap.branches.forEach((branch) => tree.appendChild(createMindBranch(branch, 0)));
+    els.mapContent.appendChild(tree);
+  }
+
+  function createMindBranch(branch, level) {
+    const node = document.createElement("article");
+    node.className = "qq-map-branch";
+    node.style.setProperty("--map-depth", Math.min(level, 5));
+    const heading = document.createElement("h4");
+    heading.textContent = branch?.title || "未命名主题";
+    node.appendChild(heading);
+    if (branch?.insight) {
+      const insight = document.createElement("p");
+      insight.className = "qq-map-insight";
+      insight.textContent = branch.insight;
+      node.appendChild(insight);
+    }
+    (Array.isArray(branch?.questions) ? branch.questions : []).forEach((question) => {
+      const item = document.createElement("p");
+      item.className = "qq-map-question";
+      item.textContent = typeof question === "string" ? question : question.question;
+      node.appendChild(item);
+    });
+    if (Array.isArray(branch?.children) && branch.children.length) {
+      const children = document.createElement("div");
+      children.className = "qq-map-children";
+      branch.children.forEach((child) => children.appendChild(createMindBranch(child, level + 1)));
+      node.appendChild(children);
+    }
+    return node;
+  }
+
+  async function exportWord() {
+    if (!items.length) return showToast("还没有可导出的内容", true);
+    if (!globalThis.QuestionQueueDocx) return showToast("Word 导出模块未加载", true);
+    els.wordButton.disabled = true;
+    try {
+      const blob = await globalThis.QuestionQueueDocx.build(items, mindMap, "blob");
+      downloadBlob(blob, `追问清单-${new Date().toISOString().slice(0, 10)}.docx`);
+      showToast("Word 文档已导出");
+    } catch (error) {
+      showToast(`Word 导出失败：${error.message}`, true);
+    } finally {
+      els.wordButton.disabled = false;
+    }
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function openPanel() {
@@ -550,7 +769,31 @@
       .qq-empty p { margin: -40px 0 0; }
       .qq-footer { display: flex; justify-content: space-between; padding: 10px 17px; color: #958f9f; background: #f4f2f7; border-top: 1px solid #e4e0e9; font-size: 10px; }
       .qq-link { padding: 0 5px; color: #6d5ef7; background: transparent; border: 0; font-size: 11px; }
-      .qq-toast { position: absolute; left: 50%; bottom: 48px; max-width: 86%; padding: 9px 14px; color: #fff; background: #393442; border-radius: 9px; box-shadow: 0 8px 22px rgba(20,16,30,.2); opacity: 0; pointer-events: none; transform: translate(-50%, 10px); transition: .2s; font-size: 12px; text-align: center; }
+      .qq-bulkbar { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 10px; }
+      .qq-bulkbar button { padding: 6px 10px; font-size: 11px; }
+      .qq-bulkbar button:disabled { cursor: default; opacity: .5; }
+      .qq-select-box { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; accent-color: var(--status-color); }
+      .qq-footer > div { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+      .qq-map-modal { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; visibility: hidden; background: #faf9fd; transform: translateX(105%); transition: transform .22s ease, visibility .22s; }
+      .qq-map-modal.is-open { visibility: visible; transform: translateX(0); }
+      .qq-map-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 18px 12px; border-bottom: 1px solid #e4e0e9; }
+      .qq-map-header h3 { margin: 0; color: #302c38; font-size: 18px; }
+      .qq-map-header p { margin: 3px 0 0; color: #857f90; font-size: 10px; }
+      .qq-map-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; }
+      .qq-map-controls span { color: #8b8595; font-size: 10px; }
+      .qq-map-controls button { padding: 7px 10px; font-size: 11px; }
+      .qq-map-content { flex: 1; overflow: auto; padding: 4px 16px 30px; }
+      .qq-map-empty { margin-top: 30px; padding: 24px; color: #8d8797; border: 1px dashed #d7d2df; border-radius: 12px; text-align: center; font-size: 12px; }
+      .qq-map-title { margin: 8px 0 5px; color: #4d416f; font-size: 18px; text-align: center; }
+      .qq-map-summary { margin: 0 0 16px; padding: 10px 12px; color: #5f5969; background: #f0edf7; border-radius: 10px; font-size: 11px; }
+      .qq-map-tree { display: grid; gap: 12px; }
+      .qq-map-branch { position: relative; margin-left: calc(var(--map-depth) * 13px); padding: 11px 12px; background: #fff; border: 1px solid #e2ddea; border-left: 3px solid #6d5ef7; border-radius: 10px; }
+      .qq-map-branch h4 { margin: 0 0 5px; color: #40384f; font-size: 13px; }
+      .qq-map-insight { margin: 0 0 7px; color: #746e7d; font-size: 11px; }
+      .qq-map-question { margin: 5px 0 0; padding: 5px 7px; color: #4e4858; background: #f6f4f8; border-radius: 6px; font-size: 10px; }
+      .qq-map-question::before { content: "? "; color: #6d5ef7; font-weight: 700; }
+      .qq-map-children { display: grid; gap: 8px; margin-top: 9px; padding-left: 8px; border-left: 1px solid #d9d3e3; }
+      .qq-toast { position: absolute; z-index: 6; left: 50%; bottom: 48px; max-width: 86%; padding: 9px 14px; color: #fff; background: #393442; border-radius: 9px; box-shadow: 0 8px 22px rgba(20,16,30,.2); opacity: 0; pointer-events: none; transform: translate(-50%, 10px); transition: .2s; font-size: 12px; text-align: center; }
       .qq-toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
       .qq-toast.is-error { background: #a94949; }
       @media (prefers-reduced-motion: reduce) { .qq-panel, .qq-backdrop, .qq-fab, .qq-toast { transition: none; } }

@@ -1,3 +1,4 @@
+const AI_SETTINGS_KEY = "questionQueueAiSettings";
 const supportedHosts = new Set([
   "chatgpt.com",
   "chat.openai.com",
@@ -14,13 +15,19 @@ const supportedHosts = new Set([
 const title = document.querySelector("#statusTitle");
 const text = document.querySelector("#statusText");
 const button = document.querySelector("#mainButton");
+const baseUrlInput = document.querySelector("#baseUrl");
+const apiKeyInput = document.querySelector("#apiKey");
+const settingsSave = document.querySelector("#settingsSave");
+const settingsState = document.querySelector("#settingsState");
 
 let activeTab = null;
 let ready = false;
+let savedSettings = {};
 
 initialize();
 
 async function initialize() {
+  await loadSettings();
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const hostname = getHostname(activeTab?.url);
 
@@ -62,6 +69,45 @@ button.addEventListener("click", async () => {
   await chrome.tabs.sendMessage(activeTab.id, { type: "QQ_TOGGLE" });
   window.close();
 });
+
+settingsSave.addEventListener("click", saveSettings);
+
+async function loadSettings() {
+  const stored = await chrome.storage.local.get(AI_SETTINGS_KEY);
+  savedSettings = stored[AI_SETTINGS_KEY] || {};
+  baseUrlInput.value = savedSettings.baseUrl || "";
+  apiKeyInput.value = "";
+  apiKeyInput.placeholder = savedSettings.apiKey ? "已保存；留空则不修改" : "请输入新生成的 API Key";
+  settingsState.textContent = savedSettings.apiKey && savedSettings.baseUrl ? "已配置 qwen3.8-max" : "尚未配置";
+}
+
+async function saveSettings() {
+  const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, "");
+  const apiKey = apiKeyInput.value.trim() || savedSettings.apiKey || "";
+  if (!isAllowedBaseUrl(baseUrl)) {
+    settingsState.textContent = "请填写阿里云百炼控制台提供的官方 Base URL";
+    return;
+  }
+  if (!apiKey) {
+    settingsState.textContent = "请填写重新生成的 API Key";
+    return;
+  }
+  savedSettings = { baseUrl, apiKey, model: "qwen3.8-max", updatedAt: new Date().toISOString() };
+  await chrome.storage.local.set({ [AI_SETTINGS_KEY]: savedSettings });
+  apiKeyInput.value = "";
+  apiKeyInput.placeholder = "已保存；留空则不修改";
+  settingsState.textContent = "设置已保存";
+}
+
+function isAllowedBaseUrl(value) {
+  if (!value || value.includes("{WorkspaceId}") || value.includes("YOUR-WORKSPACE-ID")) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname.endsWith(".maas.aliyuncs.com") || url.hostname === "dashscope.aliyuncs.com");
+  } catch {
+    return false;
+  }
+}
 
 function getHostname(url) {
   try {

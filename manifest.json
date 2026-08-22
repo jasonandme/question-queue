@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "追问清单 · Question Queue",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "在 ChatGPT、Claude、Gemini 等大模型网页中随手记录疑问，并一键填入下一轮对话。",
   "permissions": ["storage", "contextMenus", "activeTab"],
   "host_permissions": [
@@ -14,7 +14,9 @@
     "https://poe.com/*",
     "https://copilot.microsoft.com/*",
     "https://www.doubao.com/*",
-    "https://yuanbao.tencent.com/*"
+    "https://yuanbao.tencent.com/*",
+    "https://*.maas.aliyuncs.com/*",
+    "https://dashscope.aliyuncs.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -46,7 +48,7 @@
         "https://www.doubao.com/*",
         "https://yuanbao.tencent.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["vendor/jszip.min.js", "docx-export.js", "content.js"],
       "run_at": "document_idle"
     }
   ]
