@@ -119,10 +119,25 @@
       sendResponse({ ready: true, site: SITE_NAMES[location.hostname] || location.hostname });
       return;
     }
-    if (message.type === "QQ_TOGGLE") togglePanel();
+    if (message.type === "QQ_TOGGLE") openBestPanel();
     if (message.type === "QQ_CAPTURE") {
       openPanel();
       startNewCapture(message.selection || "");
+    }
+    if (message.type === "QQ_APPEND_QUESTIONS") {
+      const targetItems = Array.isArray(message.items) ? message.items : [];
+      const composer = findComposer();
+      if (!composer) {
+        sendResponse({ ok: false, error: "未找到当前页面的输入框，请先点击输入框后重试" });
+        return;
+      }
+      const text = targetItems.length === 1
+        ? String(targetItems[0].question || "")
+        : `请依次回答以下问题，并保留编号：\n\n${targetItems.map((item, index) => `${index + 1}. ${item.question}`).join("\n\n")}`;
+      insertIntoComposer(composer, text);
+      startAnswerWatch(targetItems.map((item) => item.id));
+      composer.focus();
+      sendResponse({ ok: true });
     }
   });
 
@@ -139,7 +154,7 @@
   });
 
   function bindEvents() {
-    els.fab.addEventListener("click", togglePanel);
+    els.fab.addEventListener("click", openBestPanel);
     els.close.addEventListener("click", closePanel);
     els.backdrop.addEventListener("click", closePanel);
     els.save.addEventListener("click", saveEditor);
@@ -691,6 +706,16 @@
 
   function togglePanel() {
     panelOpen ? closePanel() : openPanel();
+  }
+
+  async function openBestPanel() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "QQ_OPEN_SIDE_PANEL" });
+      if (response?.ok) return;
+    } catch {
+      // Older browsers fall back to the in-page drawer below.
+    }
+    togglePanel();
   }
 
   function showToast(message, error = false) {

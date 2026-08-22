@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>追问清单</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>追问清单</h1>
+        <p>与对话页面并排使用，不遮挡回答</p>
+      </div>
+      <span class="native-badge">共存模式</span>
+    </header>
+    <nav class="views" aria-label="功能导航">
+      <button class="view-tab is-active" data-view="queue">清单</button>
+      <button class="view-tab" data-view="map">思维导图</button>
+      <button class="view-tab" data-view="settings">设置</button>
+    </nav>
+    <section class="view is-active" id="view-queue">
+      <section class="compose card">
+        <textarea id="question" rows="3" placeholder="记录当前回答引发的新疑问…"></textarea>
+        <details id="details">
+          <summary>补充上下文与学习笔记</summary>
+          <label>
+            相关上下文
+            <textarea id="context" rows="3" placeholder="在回答中划词后右键“记录为追问”，选中文字会自动放到这里"></textarea>
+            <small>它保存“这个问题是由回答中的哪段话引发的”，方便以后回看问题来源。</small>
+          </label>
+          <label>学习笔记<textarea id="notes" rows="2" placeholder="写下自己的理解、结论或仍不确定之处"></textarea></label>
+        </details>
+        <div class="row end">
+          <button class="button ghost hidden" id="cancelEdit">取消编辑</button>
+          <button class="button primary" id="save">保存疑问</button>
+        </div>
+      </section>
+      <nav class="statuses" id="statuses" aria-label="问题状态"></nav>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="搜索疑问、上下文或笔记">
+        <button class="button primary" id="fillAll">一键填入待输入</button>
+      </div>
+      <div class="bulkbar" id="bulkbar">
+        <button class="button ghost" id="selectAll">全选当前</button>
+        <button class="button primary" id="fillSelected" disabled>填入所选</button>
+      </div>
+      <main class="list" id="list"></main>
+      <footer class="footer">
+        <span>数据仅保存在本机</span>
+        <div>
+          <button class="link" id="word">Word</button>
+          <button class="link" id="import">导入</button>
+          <button class="link" id="export">导出</button>
+          <input class="hidden" id="importFile" type="file" accept="application/json">
+        </div>
+      </footer>
+    </section>
+    <section class="view" id="view-map">
+      <div class="section-head">
+        <div>
+          <h2>问题思维导图</h2>
+          <p>按需调用 qwen3.8-max，只发送问题文本、编号和状态。</p>
+        </div>
+        <button class="button primary" id="analyze">生成思维导图</button>
+      </div>
+      <p class="muted" id="mapTime">尚未生成</p>
+      <div class="map-content" id="mapContent"></div>
+    </section>
+    <section class="view" id="view-settings">
+      <div class="section-head">
+        <div>
+          <h2>千问设置</h2>
+          <p>仅在生成思维导图时调用。密钥保存在浏览器本机。</p>
+        </div>
+      </div>
+      <div class="card settings-card">
+        <label>Base URL
+          <input id="baseUrl" type="url" placeholder="阿里云百炼工作空间的兼容模式 Base URL">
+        </label>
+        <label>新 API Key
+          <input id="apiKey" type="password" autocomplete="off" placeholder="请输入重新生成的 API Key">
+        </label>
+        <p class="warning">你此前在对话中公开过的密钥应立即在百炼控制台撤销；不要把它再次填入。</p>
+        <div class="row">
+          <button class="button primary" id="saveSettings">保存设置</button>
+          <button class="button ghost" id="clearSettings">清除 AI 设置</button>
+        </div>
+        <p class="muted" id="settingsState">尚未配置</p>
+      </div>
+      <div class="card help-card">
+        <h3>使用方式</h3>
+        <p>保持这个侧边栏打开，左侧继续阅读模型回答。想到问题时直接在这里记录；需要提问时，多选后点击“填入所选”。已有输入不会被覆盖，新问题会追加到末尾。</p>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="docx-export.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

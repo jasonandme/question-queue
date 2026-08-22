@@ -1,4 +1,5 @@
 const STORAGE_KEY = "questionQueueItems";
+const CAPTURE_KEY = "questionQueueCaptureDraft";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -6,28 +7,39 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "记录为追问：%s",
     contexts: ["selection"]
   });
+  enableNativeSidePanel();
   updateBadge();
 });
 
-chrome.runtime.onStartup.addListener(updateBadge);
+chrome.runtime.onStartup.addListener(() => {
+  enableNativeSidePanel();
+  updateBadge();
+});
 
 chrome.action.onClicked.addListener((tab) => {
-  if (tab.id) sendToTab(tab.id, { type: "QQ_TOGGLE" });
+  if (tab.id) openSidePanel(tab.id);
 });
 
 chrome.commands.onCommand.addListener((command) => {
   if (command !== "toggle-question-queue") return;
   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-    if (tab?.id) sendToTab(tab.id, { type: "QQ_TOGGLE" });
+    if (tab?.id) openSidePanel(tab.id);
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "qq-capture-selection" || !tab?.id) return;
-  sendToTab(tab.id, {
-    type: "QQ_CAPTURE",
-    selection: info.selectionText || ""
+  await chrome.storage.local.set({
+    [CAPTURE_KEY]: {
+      selection: info.selectionText || "",
+      site: hostnameLabel(tab.url),
+      sourceTitle: tab.title || "",
+      sourceUrl: tab.url || "",
+      capturedAt: new Date().toISOString()
+    }
   });
+  const opened = await openSidePanel(tab.id);
+  if (!opened) sendToTab(tab.id, { type: "QQ_CAPTURE", selection: info.selectionText || "" });
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -50,7 +62,16 @@ async function updateBadge() {
 
 const AI_SETTINGS_KEY = "questionQueueAiSettings";
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "QQ_OPEN_SIDE_PANEL") {
+    const tabId = sender.tab?.id || message.tabId;
+    if (!tabId) {
+      sendResponse({ ok: false });
+      return;
+    }
+    openSidePanel(tabId).then((ok) => sendResponse({ ok }));
+    return true;
+  }
   if (message.type !== "QQ_ANALYZE_MINDMAP") return;
   analyzeMindMap(message.items || [])
     .then((mindMap) => sendResponse({ ok: true, mindMap }))
@@ -58,13 +79,48 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
+async function enableNativeSidePanel() {
+  if (!chrome.sidePanel?.setPanelBehavior) return false;
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function openSidePanel(tabId) {
+  if (!chrome.sidePanel?.open) return false;
+  try {
+    await chrome.sidePanel.open({ tabId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hostnameLabel(url) {
+  const labels = {
+    "chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT", "claude.ai": "Claude",
+    "gemini.google.com": "Gemini", "chat.deepseek.com": "DeepSeek", "grok.com": "Grok",
+    "poe.com": "Poe", "copilot.microsoft.com": "Copilot", "www.doubao.com": "豆包",
+    "yuanbao.tencent.com": "腾讯元宝"
+  };
+  try {
+    const host = new URL(url).hostname;
+    return labels[host] || host;
+  } catch {
+    return "其他模型";
+  }
+}
+
 async function analyzeMindMap(inputItems) {
   if (!Array.isArray(inputItems) || !inputItems.length) throw new Error("还没有可分析的问题");
   const stored = await chrome.storage.local.get(AI_SETTINGS_KEY);
   const settings = stored[AI_SETTINGS_KEY] || {};
   const apiKey = String(settings.apiKey || "").trim();
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
-  if (!apiKey || !baseUrl) throw new Error("请先点击扩展图标，配置新的千问 API Key 和 Base URL");
+  if (!apiKey || !baseUrl) throw new Error("请在侧边栏“设置”中配置新的千问 API Key 和 Base URL");
 
   const safeItems = inputItems.slice(0, 300).map((item) => ({
     id: String(item.id || ""),
