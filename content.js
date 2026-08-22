@@ -88,7 +88,11 @@
   bindEvents();
   loadItems();
 
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "QQ_PING") {
+      sendResponse({ ready: true, site: SITE_NAMES[location.hostname] || location.hostname });
+      return;
+    }
     if (message.type === "QQ_TOGGLE") togglePanel();
     if (message.type === "QQ_CAPTURE") {
       openPanel();

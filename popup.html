@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>追问清单</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { width: 300px; margin: 0; padding: 18px; color: #302c38; background: #faf9fd; font: 13px/1.5 "Microsoft YaHei", system-ui, sans-serif; }
+    h1 { margin: 0; font-size: 18px; }
+    .sub { margin: 2px 0 14px; color: #817b8a; font-size: 11px; }
+    .status { margin-bottom: 12px; padding: 10px 11px; border: 1px solid #e3dfec; border-radius: 10px; background: #fff; }
+    .status strong { display: block; margin-bottom: 2px; }
+    .status span { color: #777180; font-size: 11px; }
+    button { width: 100%; padding: 9px 12px; color: #fff; background: #6d5ef7; border: 0; border-radius: 9px; font: 650 13px "Microsoft YaHei", system-ui, sans-serif; cursor: pointer; }
+    button:hover { background: #5d4fe3; }
+    .help { margin: 12px 0 0; color: #8a8494; font-size: 10px; }
+    .sites { margin-top: 8px; color: #686271; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <h1>追问清单</h1>
+  <p class="sub">随手记录疑问，下一轮一键输入</p>
+  <div class="status"><strong id="statusTitle">正在检查当前页面…</strong><span id="statusText">请稍候</span></div>
+  <button id="mainButton" type="button">打开侧边栏</button>
+  <p class="help">也可以按 Alt+Shift+Q。安装或更新后，已打开的模型页面需要刷新一次。</p>
+  <p class="sites">支持 ChatGPT、Claude、Gemini、DeepSeek、Grok、Poe、Copilot、豆包和腾讯元宝。</p>
+  <script src="popup.js"></script>
+</body>
+</html>
