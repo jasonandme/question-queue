@@ -1,0 +1,70 @@
+name: 发布安装包
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[publish-release]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出完整版本历史
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 确定发布标签
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$(git describe --tags --abbrev=0)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: 生成扩展安装包与校验值
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          mkdir -p dist package
+          git archive "$tag" \
+            background.js \
+            content.js \
+            docx-export.js \
+            manifest.json \
+            PRIVACY.md \
+            README.md \
+            LICENSE \
+            sidepanel.css \
+            sidepanel.html \
+            sidepanel.js \
+            vendor/jszip.min.js \
+            vendor/JSZIP-LICENSE.md \
+            | tar -x -C package
+          (cd package && zip -r "../dist/question-queue-${tag}.zip" .)
+          (cd dist && sha256sum "question-queue-${tag}.zip" > SHA256SUMS.txt)
+
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "追问簿 · Question Queue $TAG" \
+              --generate-notes
+          fi
