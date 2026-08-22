@@ -1,6 +1,6 @@
 # Contributing
 
-感谢你愿意改进 Question Queue。项目保持原生 Manifest V3 结构，不使用打包器，目的是让审查和本地加载尽量直接。
+感谢你愿意改进追问簿（Question Queue）。项目保持原生 Manifest V3 结构，不使用打包器，目的是让审查和本地加载尽量直接。
 
 ## 开始之前
 

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "追问清单 · Question Queue",
+  "name": "追问簿 · Question Queue",
   "version": "0.4.0",
   "description": "在 ChatGPT、Claude、Gemini 等大模型网页中随手记录疑问，并一键填入下一轮对话。",
   "permissions": ["storage", "contextMenus", "activeTab", "sidePanel"],
@@ -22,7 +22,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "打开追问清单"
+    "default_title": "打开追问簿"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -33,7 +33,7 @@
         "default": "Alt+Shift+Q",
         "mac": "Command+Shift+Q"
       },
-      "description": "打开或关闭追问清单"
+      "description": "打开或关闭追问簿"
     }
   },
   "content_scripts": [

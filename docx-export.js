@@ -20,7 +20,7 @@
 
   function documentXml(items, mindMap) {
     const body = [];
-    body.push(paragraph("追问清单学习回顾", "Title"));
+    body.push(paragraph("追问簿学习回顾", "Title"));
     body.push(paragraph(`导出时间：${new Date().toLocaleString("zh-CN")}`, "Subtitle"));
     body.push(paragraph(`问题总数：${items.length}`, "Subtitle"));
 

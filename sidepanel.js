@@ -531,7 +531,7 @@
     els.word.disabled = true;
     try {
       const blob = await globalThis.QuestionQueueDocx.build(items, mindMap, "blob");
-      downloadBlob(blob, `追问清单-${new Date().toISOString().slice(0, 10)}.docx`);
+      downloadBlob(blob, `追问簿-${new Date().toISOString().slice(0, 10)}.docx`);
       showToast("Word 文档已导出");
     } catch (error) {
       showToast(`Word 导出失败：${error.message}`, true);

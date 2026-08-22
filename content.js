@@ -37,13 +37,13 @@
   const shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = `
     <style>${styles()}</style>
-    <button class="qq-fab" id="qqFab" title="追问清单（Alt+Shift+Q）" aria-label="打开追问清单">
+    <button class="qq-fab" id="qqFab" title="追问簿（Alt+Shift+Q）" aria-label="打开追问簿">
       <span>?</span><b id="qqFabCount"></b>
     </button>
     <div class="qq-backdrop" id="qqBackdrop"></div>
-    <aside class="qq-panel" id="qqPanel" aria-label="追问清单">
+    <aside class="qq-panel" id="qqPanel" aria-label="追问簿">
       <header class="qq-header">
-        <div><h2>追问清单</h2><p>想到就记，下一轮一键输入</p></div>
+        <div><h2>追问簿</h2><p>想到就记，下一轮一键输入</p></div>
         <button class="qq-icon" id="qqClose" aria-label="关闭">×</button>
       </header>
 
@@ -687,7 +687,7 @@
     els.wordButton.disabled = true;
     try {
       const blob = await globalThis.QuestionQueueDocx.build(items, mindMap, "blob");
-      downloadBlob(blob, `追问清单-${new Date().toISOString().slice(0, 10)}.docx`);
+      downloadBlob(blob, `追问簿-${new Date().toISOString().slice(0, 10)}.docx`);
       showToast("Word 文档已导出");
     } catch (error) {
       showToast(`Word 导出失败：${error.message}`, true);

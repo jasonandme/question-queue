@@ -1,6 +1,6 @@
 # Architecture
 
-Question Queue 是一个无构建步骤的 Manifest V3 扩展。运行时由三个部分组成。
+追问簿（Question Queue）是一个无构建步骤的 Manifest V3 扩展。运行时由三个部分组成。
 
 ## Background service worker
 
