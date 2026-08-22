@@ -1,0 +1,26 @@
+name: Feature request
+description: 提议一个具体的改进
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景和问题
+      description: 先描述当前流程中的困难，不要只给出按钮或页面方案。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: 数据、权限与隐私影响
+      description: 说明是否需要新权限、网络请求或存储字段。
+    validations:
+      required: true
+

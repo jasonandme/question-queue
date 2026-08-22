@@ -1,0 +1,8 @@
+*.zip
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+qa-*.cjs
+test-results/
+
