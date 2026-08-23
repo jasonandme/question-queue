@@ -39,6 +39,7 @@ jobs:
           tag="${{ steps.version.outputs.tag }}"
           mkdir -p dist package
           git archive "$tag" \
+            site-adapters.js \
             background.js \
             content.js \
             docx-export.js \

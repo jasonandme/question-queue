@@ -17,10 +17,13 @@ jobs:
           node-version: 22
       - name: Check JavaScript syntax
         run: |
+          node --check site-adapters.js
           node --check background.js
           node --check content.js
           node --check sidepanel.js
           node --check docx-export.js
+      - name: Test site adapters
+        run: node scripts/test-site-adapters.mjs
       - name: Check manifest and repository hygiene
         run: node scripts/validate.mjs
 

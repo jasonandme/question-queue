@@ -1,3 +1,5 @@
+importScripts("site-adapters.js");
+
 const STORAGE_KEY = "questionQueueItems";
 const CAPTURE_KEY = "questionQueueCaptureDraft";
 
@@ -29,12 +31,11 @@ chrome.commands.onCommand.addListener((command) => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "qq-capture-selection" || !tab?.id) return;
+  const source = await getTabSourceMeta(tab);
   await chrome.storage.local.set({
     [CAPTURE_KEY]: {
       selection: info.selectionText || "",
-      site: hostnameLabel(tab.url),
-      sourceTitle: tab.title || "",
-      sourceUrl: tab.url || "",
+      ...source,
       capturedAt: new Date().toISOString()
     }
   });
@@ -99,18 +100,14 @@ async function openSidePanel(tabId) {
   }
 }
 
-function hostnameLabel(url) {
-  const labels = {
-    "chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT", "claude.ai": "Claude",
-    "gemini.google.com": "Gemini", "chat.deepseek.com": "DeepSeek", "grok.com": "Grok",
-    "poe.com": "Poe", "copilot.microsoft.com": "Copilot", "www.doubao.com": "豆包",
-    "yuanbao.tencent.com": "腾讯元宝"
-  };
+async function getTabSourceMeta(tab) {
+  const fallback = QuestionQueueSites.deriveSourceMeta({ url: tab?.url || "", title: tab?.title || "" });
+  if (!tab?.id) return fallback;
   try {
-    const host = new URL(url).hostname;
-    return labels[host] || host;
+    const response = await chrome.tabs.sendMessage(tab.id, { type: "QQ_GET_SOURCE_META" });
+    return response?.sourceMeta ? { ...fallback, ...response.sourceMeta } : fallback;
   } catch {
-    return "其他模型";
+    return fallback;
   }
 }
 

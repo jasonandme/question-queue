@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <h1>追问簿</h1>
-        <p>与对话页面并排使用，不遮挡回答</p>
+        <p>与文章或对话页面并排使用，不打断阅读</p>
       </div>
       <span class="native-badge">共存模式</span>
     </header>
@@ -22,13 +22,13 @@
     </nav>
     <section class="view is-active" id="view-queue">
       <section class="compose card">
-        <textarea id="question" rows="3" placeholder="记录当前回答引发的新疑问…"></textarea>
+        <textarea id="question" rows="3" placeholder="记录当前内容引发的新疑问…"></textarea>
         <details id="details">
           <summary>补充上下文与学习笔记</summary>
           <label>
             相关上下文
-            <textarea id="context" rows="3" placeholder="在回答中划词后右键“记录为追问”，选中文字会自动放到这里"></textarea>
-            <small>它保存“这个问题是由回答中的哪段话引发的”，方便以后回看问题来源。</small>
+            <textarea id="context" rows="3" placeholder="在网页中划词后右键“记录为追问”，选中文字会自动放到这里"></textarea>
+            <small>它保存“这个问题是由哪段内容引发的”，方便以后回看问题来源。</small>
           </label>
           <label>标签
             <input id="tags" type="text" list="tagSuggestions" placeholder="例如：工作, 学习方法, 待验证">
@@ -43,12 +43,12 @@
       </section>
       <nav class="statuses" id="statuses" aria-label="问题状态"></nav>
       <div class="toolbar">
-        <input id="search" type="search" placeholder="搜索疑问、对话或标签">
+        <input id="search" type="search" placeholder="搜索疑问、来源或标签">
         <button class="button primary" id="fillAll">一键填入待输入</button>
       </div>
       <div class="filters">
-        <label>对话
-          <select id="conversationFilter"><option value="all">全部对话</option></select>
+        <label>来源
+          <select id="conversationFilter"><option value="all">全部来源</option></select>
         </label>
         <label>标签
           <select id="tagFilter"><option value="all">全部标签</option></select>
@@ -94,7 +94,7 @@
         <label>新 API Key
           <input id="apiKey" type="password" autocomplete="off" placeholder="请输入重新生成的 API Key">
         </label>
-        <p class="warning">你此前在对话中公开过的密钥应立即在百炼控制台撤销；不要把它再次填入。</p>
+        <p class="warning">请使用独立、可撤销且设置了额度的 API Key，不要在代码、截图或公开讨论中分享密钥。</p>
         <div class="row">
           <button class="button primary" id="saveSettings">保存设置</button>
           <button class="button ghost" id="clearSettings">清除 AI 设置</button>
@@ -103,11 +103,12 @@
       </div>
       <div class="card help-card">
         <h3>使用方式</h3>
-        <p>保持这个侧边栏打开，左侧继续阅读模型回答。想到问题时直接在这里记录；需要提问时，多选后点击“填入所选”。已有输入不会被覆盖，新问题会追加到末尾。</p>
+        <p>阅读文章或模型回答时直接记录疑问；切换到大模型对话页面后，可以多选并“填入所选”。已有输入不会被覆盖，新问题会追加到末尾。</p>
       </div>
     </section>
   </div>
   <div class="toast" id="toast" role="status"></div>
+  <script src="site-adapters.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script src="docx-export.js"></script>
   <script src="sidepanel.js"></script>

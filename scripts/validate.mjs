@@ -5,7 +5,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 
 const requiredFiles = [
-  "background.js", "content.js", "docx-export.js", "sidepanel.html",
+  "site-adapters.js", "background.js", "content.js", "docx-export.js", "sidepanel.html",
   "sidepanel.css", "sidepanel.js", "vendor/jszip.min.js", "vendor/JSZIP-LICENSE.md"
 ];
 
@@ -17,13 +17,23 @@ if (manifest.manifest_version !== 3) throw new Error("manifest_version must be 3
 if (manifest.side_panel?.default_path !== "sidepanel.html") throw new Error("side panel entry is missing");
 if (manifest.background?.service_worker !== "background.js") throw new Error("background service worker is missing");
 
+const contentMatches = new Set((manifest.content_scripts || []).flatMap((script) => script.matches || []));
+for (const pattern of ["https://*.csdn.net/*", "https://*.zhihu.com/*"]) {
+  if (!contentMatches.has(pattern)) throw new Error(`Missing learning-site match: ${pattern}`);
+  if (!(manifest.host_permissions || []).includes(pattern)) throw new Error(`Missing learning-site permission: ${pattern}`);
+}
+if (!(manifest.content_scripts || []).some((script) => script.js?.[0] === "site-adapters.js")) {
+  throw new Error("site-adapters.js must load before content.js");
+}
+
 const allowedPermissions = new Set(["storage", "contextMenus", "activeTab", "sidePanel"]);
 for (const permission of manifest.permissions || []) {
   if (!allowedPermissions.has(permission)) throw new Error(`Unexpected permission: ${permission}`);
 }
 
 const firstPartyFiles = [
-  "background.js", "content.js", "docx-export.js", "sidepanel.js", "README.md",
+  "site-adapters.js", "background.js", "content.js", "docx-export.js", "sidepanel.js",
+  "README.md",
   "PRIVACY.md", "SECURITY.md", "CONTRIBUTING.md"
 ];
 const suspicious = [

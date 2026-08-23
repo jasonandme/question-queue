@@ -8,11 +8,13 @@
 
 ## Content script
 
-`content.js` 运行在支持的模型网站中，负责注入快捷按钮、查找输入框、追加问题、观察回答节点，以及提供旧浏览器兼容抽屉。内容脚本只接收需要填入的问题 ID 和文本，不读取或上传完整对话历史。
+`content.js` 运行在支持的大模型与知识学习网站中，负责注入快捷按钮、采集页面来源，以及提供旧浏览器兼容抽屉。只有站点适配器判定为大模型对话时，内容脚本才会查找输入框、追加问题和观察回答节点；CSDN、知乎等知识页不会修改评论框。
+
+`site-adapters.js` 是共享的纯 JavaScript 适配层。后台、侧边栏和内容脚本使用同一组站点规则，统一识别站点类型、正文标题、canonical URL 与稳定来源标识。
 
 ## Side panel
 
-`sidepanel.html`、`sidepanel.css` 和 `sidepanel.js` 构成主要界面，负责问题管理、状态、筛选、对话身份、标签、导入导出、Word 文档、思维导图和模型设置。
+`sidepanel.html`、`sidepanel.css` 和 `sidepanel.js` 构成主要界面，负责问题管理、状态、来源筛选、标签、导入导出、Word 文档、思维导图和模型设置。
 
 ## Storage schema
 
@@ -26,11 +28,12 @@
   notes: "...",
   tags: ["research", "review"],
   status: "pending | inserted | answered | learned",
-  site: "ChatGPT",
-  sourceTitle: "Page title",
+  site: "CSDN",
+  sourceType: "article | chat | page",
+  sourceTitle: "Article or conversation title",
   sourceUrl: "https://...",
-  conversationId: "https://origin/path",
-  conversationTitle: "Conversation title",
+  conversationId: "stable source id (legacy field name)",
+  conversationTitle: "source title (legacy field name)",
   createdAt: "ISO timestamp",
   updatedAt: "ISO timestamp"
 }

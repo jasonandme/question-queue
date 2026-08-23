@@ -9,13 +9,7 @@
     answered: { label: "已回答", color: "#E58A26" },
     learned: { label: "已掌握", color: "#2E9D64" }
   };
-  const SITE_NAMES = {
-    "chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT", "claude.ai": "Claude",
-    "gemini.google.com": "Gemini", "chat.deepseek.com": "DeepSeek", "grok.com": "Grok",
-    "poe.com": "Poe", "copilot.microsoft.com": "Copilot", "www.doubao.com": "豆包",
-    "yuanbao.tencent.com": "腾讯元宝"
-  };
-  const SUPPORTED_HOSTS = new Set(Object.keys(SITE_NAMES));
+  const Sites = globalThis.QuestionQueueSites;
 
   let items = [];
   let mindMap = null;
@@ -171,7 +165,7 @@
       }
     });
     if (activeConversation !== "all" && !conversations.has(activeConversation)) activeConversation = "all";
-    els.conversationFilter.replaceChildren(option("all", `全部对话（${conversations.size}）`));
+    els.conversationFilter.replaceChildren(option("all", `全部来源（${conversations.size}）`));
     Array.from(conversations.entries())
       .sort((a, b) => new Date(b[1].updatedAt) - new Date(a[1].updatedAt))
       .forEach(([key, value]) => els.conversationFilter.appendChild(option(key, value.title)));
@@ -259,7 +253,7 @@
       meta.appendChild(checkbox);
     }
     const source = document.createElement(item.sourceUrl ? "a" : "span");
-    source.textContent = item.site || "其他模型";
+    source.textContent = item.site || "其他网页";
     if (item.sourceUrl) {
       source.href = item.sourceUrl;
       source.target = "_blank";
@@ -424,7 +418,7 @@
     if (!targetItems.length) return;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const host = hostname(tab?.url);
-    if (!tab?.id || !SUPPORTED_HOSTS.has(host)) {
+    if (!tab?.id || !Sites.isChatSite(host)) {
       showToast("请先在左侧打开受支持的大模型对话页面", true);
       return;
     }
@@ -542,7 +536,7 @@
 
   function exportJson() {
     const payload = JSON.stringify({
-      schemaVersion: 4, exportedAt: new Date().toISOString(), mindMap, items
+      schemaVersion: 5, exportedAt: new Date().toISOString(), mindMap, items
     }, null, 2);
     downloadBlob(new Blob([payload], { type: "application/json" }),
       `question-queue-${new Date().toISOString().slice(0, 10)}.json`);
@@ -622,22 +616,26 @@
 
   async function currentTabMeta() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const host = hostname(tab?.url);
-    return normalizeSourceMeta({
-      site: SITE_NAMES[host] || host || "其他模型",
-      sourceTitle: tab?.title || "",
-      sourceUrl: tab?.url || ""
-    });
+    const fallback = Sites.deriveSourceMeta({ url: tab?.url || "", title: tab?.title || "" });
+    if (!tab?.id) return normalizeSourceMeta(fallback);
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "QQ_GET_SOURCE_META" });
+      return normalizeSourceMeta(response?.sourceMeta || fallback);
+    } catch {
+      return normalizeSourceMeta(fallback);
+    }
   }
 
   function normalizeSourceMeta(source = {}) {
-    const site = source.site || SITE_NAMES[hostname(source.sourceUrl)] || hostname(source.sourceUrl) || "其他模型";
-    const sourceTitle = String(source.sourceTitle || "");
-    const sourceUrl = String(source.sourceUrl || "");
+    const derived = Sites.deriveSourceMeta({ url: source.sourceUrl || "", title: source.sourceTitle || "" });
+    const site = source.site || derived.site;
+    const sourceTitle = String(source.sourceTitle || derived.sourceTitle || "");
+    const sourceUrl = String(source.sourceUrl || derived.sourceUrl || "");
+    const sourceType = source.sourceType || derived.sourceType;
     return {
-      site, sourceTitle, sourceUrl,
-      conversationId: source.conversationId || conversationKey(sourceUrl, sourceTitle, site),
-      conversationTitle: source.conversationTitle || cleanConversationTitle(sourceTitle, site)
+      site, sourceType, sourceTitle, sourceUrl,
+      conversationId: source.conversationId || source.sourceId || conversationKey(sourceUrl, sourceTitle, site),
+      conversationTitle: source.conversationTitle || sourceTitle || cleanConversationTitle(sourceTitle, site)
     };
   }
 
@@ -646,32 +644,18 @@
   }
 
   function conversationTitleForItem(item) {
-    return item.conversationTitle || cleanConversationTitle(item.sourceTitle, item.site) || item.site || "未识别的对话";
+    return item.conversationTitle || cleanConversationTitle(item.sourceTitle, item.site) || item.site || "未识别的来源";
   }
 
   function conversationKey(url, title, site) {
-    try {
-      const parsed = new URL(url);
-      const path = parsed.pathname.replace(/\/+$/, "") || "/";
-      if (path !== "/") return `${parsed.origin}${path}`;
-    } catch {
-      // Fall through to a title-based key for legacy or missing URLs.
-    }
-    return `title:${site || "other"}:${cleanConversationTitle(title, site) || "untitled"}`;
+    const cleanTitle = cleanConversationTitle(title, site);
+    return Sites.sourceKey(url, cleanTitle, site);
   }
 
   function cleanConversationTitle(title, site) {
-    let value = String(title || "").trim();
-    const suffixes = [site, "ChatGPT", "Claude", "Gemini", "DeepSeek", "Grok", "Poe", "Microsoft Copilot", "豆包", "腾讯元宝"];
-    suffixes.filter(Boolean).forEach((suffix) => {
-      value = value.replace(new RegExp(`\\s*[-|·—–]\\s*${escapeRegExp(suffix)}\\s*$`, "i"), "").trim();
-    });
-    if (!value || value.toLocaleLowerCase() === String(site || "").toLocaleLowerCase()) return site ? `${site} 未命名对话` : "未命名对话";
+    const value = Sites.cleanTitle(title, site);
+    if (!value || value.toLocaleLowerCase() === String(site || "").toLocaleLowerCase()) return site ? `${site} 未命名来源` : "未命名来源";
     return value;
-  }
-
-  function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function parseTags(value) {
@@ -684,7 +668,7 @@
   }
 
   function hostname(url) {
-    try { return new URL(url).hostname; } catch { return ""; }
+    return Sites.hostname(url);
   }
 
   function formatTime(value) {

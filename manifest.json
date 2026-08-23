@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "追问簿 · Question Queue",
-  "version": "0.4.0",
-  "description": "在 ChatGPT、Claude、Gemini 等大模型网页中随手记录疑问，并一键填入下一轮对话。",
+  "version": "0.5.0",
+  "description": "在大模型对话与知识学习网页中随手记录疑问，保留文章上下文，并在下一轮对话中批量追问。",
   "permissions": ["storage", "contextMenus", "activeTab", "sidePanel"],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -15,6 +15,8 @@
     "https://copilot.microsoft.com/*",
     "https://www.doubao.com/*",
     "https://yuanbao.tencent.com/*",
+    "https://*.csdn.net/*",
+    "https://*.zhihu.com/*",
     "https://*.maas.aliyuncs.com/*",
     "https://dashscope.aliyuncs.com/*"
   ],
@@ -48,9 +50,11 @@
         "https://poe.com/*",
         "https://copilot.microsoft.com/*",
         "https://www.doubao.com/*",
-        "https://yuanbao.tencent.com/*"
+        "https://yuanbao.tencent.com/*",
+        "https://*.csdn.net/*",
+        "https://*.zhihu.com/*"
       ],
-      "js": ["vendor/jszip.min.js", "docx-export.js", "content.js"],
+      "js": ["site-adapters.js", "vendor/jszip.min.js", "docx-export.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

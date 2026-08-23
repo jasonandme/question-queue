@@ -10,18 +10,7 @@
     answered: { label: "已回答", color: "#E58A26" },
     learned: { label: "已掌握", color: "#2E9D64" }
   };
-  const SITE_NAMES = {
-    "chatgpt.com": "ChatGPT",
-    "chat.openai.com": "ChatGPT",
-    "claude.ai": "Claude",
-    "gemini.google.com": "Gemini",
-    "chat.deepseek.com": "DeepSeek",
-    "grok.com": "Grok",
-    "poe.com": "Poe",
-    "copilot.microsoft.com": "Copilot",
-    "www.doubao.com": "豆包",
-    "yuanbao.tencent.com": "腾讯元宝"
-  };
+  const Sites = globalThis.QuestionQueueSites;
 
   let items = [];
   let activeStatus = "pending";
@@ -117,7 +106,11 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "QQ_PING") {
-      sendResponse({ ready: true, site: SITE_NAMES[location.hostname] || location.hostname });
+      sendResponse({ ready: true, site: Sites.getSiteName(location.hostname) });
+      return;
+    }
+    if (message.type === "QQ_GET_SOURCE_META") {
+      sendResponse({ sourceMeta: currentSourceMeta() });
       return;
     }
     if (message.type === "QQ_TOGGLE") openBestPanel();
@@ -126,6 +119,10 @@
       startNewCapture(message.selection || "");
     }
     if (message.type === "QQ_APPEND_QUESTIONS") {
+      if (!Sites.isChatSite(location.hostname)) {
+        sendResponse({ ok: false, error: "知识学习网页仅用于记录；请切换到大模型对话页面后填入" });
+        return;
+      }
       const targetItems = Array.isArray(message.items) ? message.items : [];
       const composer = findComposer();
       if (!composer) {
@@ -251,7 +248,7 @@
       meta.appendChild(checkbox);
     }
     const source = document.createElement(item.sourceUrl ? "a" : "span");
-    source.textContent = item.site || "其他模型";
+    source.textContent = item.site || "其他网页";
     if (item.sourceUrl) {
       source.href = item.sourceUrl;
       source.target = "_blank";
@@ -324,6 +321,7 @@
       });
       showToast("已更新");
     } else {
+      const source = currentSourceMeta();
       items.push({
         id: crypto.randomUUID(),
         question,
@@ -331,11 +329,12 @@
         tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(),
         status: "pending",
-        site: SITE_NAMES[location.hostname] || location.hostname,
-        sourceTitle: document.title,
-        sourceUrl: location.href,
-        conversationId: conversationKey(location.href, document.title),
-        conversationTitle: cleanConversationTitle(document.title),
+        site: source.site,
+        sourceType: source.sourceType,
+        sourceTitle: source.sourceTitle,
+        sourceUrl: source.sourceUrl,
+        conversationId: source.sourceId,
+        conversationTitle: source.sourceTitle,
         createdAt: now,
         updatedAt: now
       });
@@ -347,9 +346,12 @@
   }
 
   function startNewCapture(selection = "") {
-    resetEditor();
-    els.context.value = selection.trim();
-    els.details.open = Boolean(selection.trim());
+    const captured = selection.trim();
+    if (captured) {
+      const existing = els.context.value.trim();
+      els.context.value = existing ? `${existing}\n\n${captured}` : captured;
+    }
+    els.details.open = Boolean(els.context.value.trim());
     setTimeout(() => els.question.focus(), 50);
   }
 
@@ -406,6 +408,10 @@
 
   async function fillItems(targetItems) {
     if (!targetItems.length) return;
+    if (!Sites.isChatSite(location.hostname)) {
+      showToast("请切换到受支持的大模型对话页面后再填入", true);
+      return;
+    }
     const composer = findComposer();
     if (!composer) {
       showToast("未找到当前页面的输入框，请点击输入框后重试", true);
@@ -514,7 +520,7 @@
 
   function exportItems() {
     const payload = JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 5,
       exportedAt: new Date().toISOString(),
       mindMap,
       items
@@ -746,26 +752,8 @@
     return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
   }
 
-  function conversationKey(url, title) {
-    try {
-      const parsed = new URL(url);
-      const path = parsed.pathname.replace(/\/+$/, "") || "/";
-      if (path !== "/") return `${parsed.origin}${path}`;
-    } catch {
-      // Use title when the URL is unavailable.
-    }
-    return `title:${location.hostname}:${cleanConversationTitle(title)}`;
-  }
-
-  function cleanConversationTitle(title) {
-    let value = String(title || "").trim();
-    const site = SITE_NAMES[location.hostname] || location.hostname;
-    [site, "ChatGPT", "Claude", "Gemini", "DeepSeek", "Grok", "Poe", "Microsoft Copilot", "豆包", "腾讯元宝"]
-      .filter(Boolean)
-      .forEach((suffix) => {
-        value = value.replace(new RegExp(`\\s*[-|·—–]\\s*${String(suffix).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "").trim();
-      });
-    return value || `${site} 未命名对话`;
+  function currentSourceMeta() {
+    return Sites.deriveSourceMeta({ url: location.href, title: document.title, document });
   }
 
   function parseTags(value) {
