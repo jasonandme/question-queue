@@ -22,6 +22,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: 确定发布标签
         id: version
         shell: bash
@@ -33,6 +37,23 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      - name: 校验标签与 manifest 版本一致
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          manifest_version="$(node -p "require('./manifest.json').version")"
+          if [[ "$tag" != "v$manifest_version" ]]; then
+            echo "tag $tag does not match manifest version $manifest_version" >&2
+            exit 1
+          fi
+
+      - name: 运行发布前检查
+        shell: bash
+        run: |
+          node scripts/test-site-adapters.mjs
+          node scripts/test-question-store.mjs
+          node scripts/validate.mjs
+
       - name: 生成扩展安装包与校验值
         shell: bash
         run: |
@@ -40,6 +61,7 @@ jobs:
           mkdir -p dist package
           git archive "$tag" \
             site-adapters.js \
+            question-store.js \
             background.js \
             content.js \
             docx-export.js \
@@ -50,11 +72,23 @@ jobs:
             sidepanel.css \
             sidepanel.html \
             sidepanel.js \
+            icons \
             vendor/jszip.min.js \
             vendor/JSZIP-LICENSE.md \
             | tar -x -C package
           (cd package && zip -r "../dist/question-queue-${tag}.zip" .)
           (cd dist && sha256sum "question-queue-${tag}.zip" > SHA256SUMS.txt)
+
+      - name: 检查安装包内容完整
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          for entry in manifest.json question-store.js site-adapters.js content.js sidepanel.js icons/icon-128.png; do
+            unzip -l "dist/question-queue-${tag}.zip" | grep -q "$entry" || {
+              echo "missing $entry in release package" >&2
+              exit 1
+            }
+          done
 
       - name: 创建 GitHub Release
         env:

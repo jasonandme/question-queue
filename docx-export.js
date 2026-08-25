@@ -18,6 +18,13 @@
     return zip.generateAsync({ type: outputType, compression: "DEFLATE", compressionOptions: { level: 6 } });
   }
 
+  // Links may come from imported backups, so only http(s) targets are printed.
+  function safeLink(value) {
+    const check = root.QuestionQueueStore?.safeHttpUrl;
+    if (check) return check(value);
+    return /^https?:\/\//i.test(String(value || "").trim()) ? String(value).trim() : "";
+  }
+
   function documentXml(items, mindMap) {
     const body = [];
     body.push(paragraph("追问簿学习回顾", "Title"));
@@ -40,6 +47,10 @@
         const meta = [item.site, item.conversationTitle || item.sourceTitle, formatDate(item.updatedAt)]
           .filter(Boolean).join(" · ");
         if (meta) body.push(paragraph(meta, "Subtitle"));
+        const sourceUrl = safeLink(item.sourceUrl);
+        if (sourceUrl) body.push(paragraph(`来源页面：${sourceUrl}`, "Subtitle"));
+        const answerUrl = safeLink(item.answerUrl);
+        if (answerUrl) body.push(paragraph(`回答所在页面：${answerUrl}`, "Subtitle"));
         const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
         if (tags.length) body.push(paragraph(`标签：${tags.map((tag) => `#${tag}`).join("  ")}`, "Normal"));
         if (item.context) body.push(paragraph(`相关上下文：${item.context}`, "Normal"));

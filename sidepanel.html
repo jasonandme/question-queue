@@ -15,13 +15,14 @@
       </div>
       <span class="native-badge">共存模式</span>
     </header>
-    <nav class="views" aria-label="功能导航">
-      <button class="view-tab is-active" data-view="queue">清单</button>
-      <button class="view-tab" data-view="map">思维导图</button>
-      <button class="view-tab" data-view="settings">设置</button>
+    <nav class="views" role="tablist" aria-label="功能导航">
+      <button class="view-tab is-active" data-view="queue" role="tab" aria-selected="true" aria-controls="view-queue">清单</button>
+      <button class="view-tab" data-view="map" role="tab" aria-selected="false" aria-controls="view-map">思维导图</button>
+      <button class="view-tab" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings">设置</button>
     </nav>
-    <section class="view is-active" id="view-queue">
+    <section class="view is-active" id="view-queue" role="tabpanel" aria-label="清单">
       <section class="compose card">
+        <label class="sr-only" for="question">疑问内容</label>
         <textarea id="question" rows="3" placeholder="记录当前内容引发的新疑问…"></textarea>
         <details id="details">
           <summary>补充上下文与学习笔记</summary>
@@ -41,8 +42,9 @@
           <button class="button primary" id="save">保存疑问</button>
         </div>
       </section>
-      <nav class="statuses" id="statuses" aria-label="问题状态"></nav>
+      <nav class="statuses" id="statuses" role="tablist" aria-label="问题状态"></nav>
       <div class="toolbar">
+        <label class="sr-only" for="search">搜索</label>
         <input id="search" type="search" placeholder="搜索疑问、来源或标签">
         <button class="button primary" id="fillAll">一键填入待输入</button>
       </div>
@@ -53,9 +55,16 @@
         <label>标签
           <select id="tagFilter"><option value="all">全部标签</option></select>
         </label>
+        <label>导出范围
+          <select id="exportScope">
+            <option value="all">全部记录</option>
+            <option value="filtered">当前筛选</option>
+            <option value="selected">已勾选</option>
+          </select>
+        </label>
       </div>
       <div class="bulkbar" id="bulkbar">
-        <button class="button ghost" id="selectAll">全选当前</button>
+        <button class="button ghost" id="selectAll" aria-pressed="false">全选当前</button>
         <button class="button primary" id="fillSelected" disabled>填入所选</button>
       </div>
       <main class="list" id="list"></main>
@@ -69,18 +78,18 @@
         </div>
       </footer>
     </section>
-    <section class="view" id="view-map">
+    <section class="view" id="view-map" role="tabpanel" aria-label="思维导图">
       <div class="section-head">
         <div>
           <h2>问题思维导图</h2>
-          <p>按需调用 qwen3.8-max，只发送问题文本、编号和状态。</p>
+          <p>按需调用你在设置中指定的千问模型，只发送问题文本、编号和状态。</p>
         </div>
         <button class="button primary" id="analyze">生成思维导图</button>
       </div>
       <p class="muted" id="mapTime">尚未生成</p>
       <div class="map-content" id="mapContent"></div>
     </section>
-    <section class="view" id="view-settings">
+    <section class="view" id="view-settings" role="tabpanel" aria-label="设置">
       <div class="section-head">
         <div>
           <h2>千问设置</h2>
@@ -90,6 +99,10 @@
       <div class="card settings-card">
         <label>Base URL
           <input id="baseUrl" type="url" placeholder="阿里云百炼工作空间的兼容模式 Base URL">
+        </label>
+        <label>模型名称
+          <input id="model" type="text" placeholder="qwen-max">
+          <small>留空则使用默认模型 qwen-max，可改成账号内可用的其他千问模型。</small>
         </label>
         <label>新 API Key
           <input id="apiKey" type="password" autocomplete="off" placeholder="请输入重新生成的 API Key">
@@ -101,6 +114,17 @@
         </div>
         <p class="muted" id="settingsState">尚未配置</p>
       </div>
+      <div class="card settings-card">
+        <h3>填入模板</h3>
+        <label>多条问题的开头提示语
+          <textarea id="fillPrefix" rows="2" placeholder="请依次回答以下问题，并保留编号："></textarea>
+          <small>填入多条问题时会先写这句话，再逐条编号。留空则只填问题本身。</small>
+        </label>
+        <div class="row">
+          <button class="button primary" id="saveFillPrefix">保存模板</button>
+          <button class="button ghost" id="resetFillPrefix">恢复默认</button>
+        </div>
+      </div>
       <div class="card help-card">
         <h3>使用方式</h3>
         <p>阅读文章或模型回答时直接记录疑问；切换到大模型对话页面后，可以多选并“填入所选”。已有输入不会被覆盖，新问题会追加到末尾。</p>
@@ -109,6 +133,7 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
   <script src="site-adapters.js"></script>
+  <script src="question-store.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script src="docx-export.js"></script>
   <script src="sidepanel.js"></script>

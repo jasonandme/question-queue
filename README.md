@@ -17,19 +17,23 @@ Question Queue is a local-first browser extension for collecting questions from 
 ## 功能
 
 - Edge / Chrome 原生侧边栏，与文章或模型网页并排显示。
-- 网页右下角快捷按钮和 Alt+Shift+Q 快捷键。
+- 网页右下角快捷按钮和 Alt+Shift+Q 快捷键，按钮上显示待输入数量。
 - 在 CSDN、知乎或模型回答中划词，通过右键菜单记录为追问。
 - 自动读取 CSDN、知乎的正文标题与规范链接，并移除常见分享追踪参数。
 - 知识学习网页只负责采集，大模型对话网页才允许一键填入，避免误写评论框。
 - 填入时只追加，不覆盖输入框里的已有文字，也不会自动发送。
 - 待输入、已输入、已回答、已掌握四种状态。
 - 待输入和已输入记录均支持多选、批量填入与再次填入。
+- 保存时检测重复问题并提示，可自行决定是否继续保存。
+- 标记“已回答”会记下回答所在页面，卡片上可直接跳回。
 - 自动识别当前文章或对话标题和稳定链接，默认按来源分组。
 - 支持手动标签、来源筛选、标签筛选和全文搜索。
-- JSON 备份与合并导入。
+- JSON 备份与合并导入，导入数据会先清洗再写入本地存储。
 - 本地生成 Word 文档，包含状态、来源、标签、上下文和笔记。
-- 可选接入阿里云百炼 qwen3.8-max，按需生成问题思维导图。
-- 不支持原生侧边栏的旧浏览器会回退到网页内抽屉。
+- JSON 与 Word 均可选择导出范围：全部记录、当前筛选结果或已勾选记录。
+- 批量填入的开头提示语可以在设置中自定义。
+- 可选接入阿里云百炼的千问模型，按需生成问题思维导图；模型名称可在设置中修改。
+- 界面跟随系统深色模式。
 
 ## 支持的网站
 
@@ -41,7 +45,7 @@ Question Queue is a local-first browser extension for collecting questions from 
 - DeepSeek
 - Grok
 - Poe
-- Microsoft Copilot
+- Copilot
 - 豆包
 - 腾讯元宝
 
@@ -74,6 +78,8 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 更新源码后，需要在扩展管理页面点击“重新加载”，再刷新已打开的网页。直接覆盖旧目录并重新加载，可以保留浏览器本地数据；删除扩展通常会同时删除本地记录，操作前请先导出 JSON 备份。
 
+如果 Alt+Shift+Q 与其他扩展或输入法冲突，可在 edge://extensions/shortcuts 或 chrome://extensions/shortcuts 改成别的组合。
+
 ## 使用
 
 ### 记录问题
@@ -82,6 +88,8 @@ Question Queue is a local-first browser extension for collecting questions from 
 - 在侧边栏顶部写下问题。
 - 标签支持中文逗号、英文逗号、分号或换行分隔。
 - 点击“保存疑问”，记录进入“待输入”。
+
+清单的浏览、编辑、筛选与导出都在侧边栏完成，网页里只保留快捷按钮，避免遮挡正文。
 
 ### 带入文章或回答上下文
 
@@ -93,6 +101,7 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 - “一键填入待输入”会按记录时间追加全部待输入问题。
 - 也可以勾选若干条记录，点击“填入所选”。
+- 多条问题会带上开头提示语和编号，提示语可以在设置里改写或留空。
 - 已输入的问题可再次填入，适合网页刷新或浏览器重启后恢复草稿。
 - 扩展只修改输入框，不会代替用户发送消息。
 
@@ -102,13 +111,23 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 旧记录没有新增来源字段时，会根据原有链接和标题即时归组，不需要迁移脚本。
 
+### 导出范围
+
+清单页的“导出范围”决定 JSON 与 Word 包含哪些记录：
+
+- 全部记录：整份本地数据，适合备份。
+- 当前筛选：状态、来源、标签和搜索共同作用后的结果。
+- 已勾选：只导出勾选的条目，适合整理单个主题。
+
+选择“当前筛选”或“已勾选”时，思维导图会按导出的问题裁剪，只保留仍有对应问题的分支；没有任何分支命中时不写入思维导图。Word 文档中每条记录会附上来源页面链接，标记过“已回答”的还会附上回答所在页面链接。
+
 ## 可选的千问思维导图
 
 思维导图功能默认不联网，只有用户主动点击“生成思维导图”时才会调用接口。
 
 1. 在阿里云百炼创建独立、可撤销且设置了额度的 API Key。
 2. 打开侧边栏的“设置”。
-3. 填写工作空间的 OpenAI 兼容 Base URL 和 API Key。
+3. 填写工作空间的 OpenAI 兼容 Base URL 和 API Key，需要时修改模型名称，留空则使用 `qwen-max`。
 4. 进入“思维导图”，点击生成。
 
 请求只包含问题文本、状态和匿名问题 ID，不包含相关上下文、学习笔记、来源网址或完整模型回答。API Key 保存在浏览器扩展本地存储中，因此公开部署或商业化版本应使用服务端令牌代理，不应把共享密钥放进扩展。
@@ -139,12 +158,14 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 ~~~text
 site-adapters.js    站点分类、正文标题和规范链接识别
+question-store.js   记录清洗、导入合并、去重与填入文本生成
 background.js       后台事件、右键菜单、侧边栏与千问请求
-content.js          网页快捷入口、模型输入框追加与兼容抽屉
+content.js          网页快捷按钮、模型输入框追加与回答观察
 sidepanel.*         原生侧边栏界面和本地数据管理
 docx-export.js      本地 Word 文档生成
+icons/              扩展图标，由 scripts/make-icons.mjs 生成
 vendor/             JSZip 及其许可证
-scripts/            无依赖的发布前检查
+scripts/            无依赖的发布前检查与单元测试
 docs/               架构和迭代决策记录
 ~~~
 
@@ -158,13 +179,17 @@ docs/               架构和迭代决策记录
 
 ~~~bash
 node --check site-adapters.js
+node --check question-store.js
 node --check background.js
 node --check content.js
 node --check sidepanel.js
 node --check docx-export.js
 node scripts/test-site-adapters.mjs
+node scripts/test-question-store.mjs
 node scripts/validate.mjs
 ~~~
+
+修改图标时运行 `node scripts/make-icons.mjs` 重新生成 PNG，脚本不依赖任何第三方库。
 
 提交修改前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

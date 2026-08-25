@@ -2,7 +2,10 @@
   const STORAGE_KEY = "questionQueueItems";
   const MINDMAP_KEY = "questionQueueMindMap";
   const AI_SETTINGS_KEY = "questionQueueAiSettings";
+  const UI_SETTINGS_KEY = "questionQueueUiSettings";
   const CAPTURE_KEY = "questionQueueCaptureDraft";
+  const SEARCH_DEBOUNCE_MS = 150;
+  const DEFAULT_MODEL = "qwen-max";
   const STATUS = {
     pending: { label: "待输入", color: "#7C5CFC" },
     inserted: { label: "已输入", color: "#168AAD" },
@@ -10,16 +13,20 @@
     learned: { label: "已掌握", color: "#2E9D64" }
   };
   const Sites = globalThis.QuestionQueueSites;
+  const Store = globalThis.QuestionQueueStore;
 
   let items = [];
   let mindMap = null;
   let activeStatus = "pending";
   let activeConversation = "all";
   let activeTag = "all";
+  let searchQuery = "";
   let selectedIds = new Set();
   let editingId = null;
   let captureMeta = null;
   let savedSettings = {};
+  let uiSettings = {};
+  let searchTimer = null;
 
   const $ = (selector) => document.querySelector(selector);
   const els = {
@@ -28,24 +35,30 @@
     save: $("#save"), cancelEdit: $("#cancelEdit"), statuses: $("#statuses"), search: $("#search"),
     fillAll: $("#fillAll"), bulkbar: $("#bulkbar"), selectAll: $("#selectAll"),
     fillSelected: $("#fillSelected"), list: $("#list"), word: $("#word"), import: $("#import"),
-    export: $("#export"), importFile: $("#importFile"), analyze: $("#analyze"),
-    mapTime: $("#mapTime"), mapContent: $("#mapContent"), baseUrl: $("#baseUrl"),
+    export: $("#export"), exportScope: $("#exportScope"), importFile: $("#importFile"), analyze: $("#analyze"),
+    mapTime: $("#mapTime"), mapContent: $("#mapContent"), baseUrl: $("#baseUrl"), model: $("#model"),
     apiKey: $("#apiKey"), saveSettings: $("#saveSettings"), clearSettings: $("#clearSettings"),
-    settingsState: $("#settingsState"), toast: $("#toast")
+    settingsState: $("#settingsState"), fillPrefix: $("#fillPrefix"), saveFillPrefix: $("#saveFillPrefix"),
+    resetFillPrefix: $("#resetFillPrefix"), toast: $("#toast")
   };
 
   bindEvents();
   initialize();
 
   async function initialize() {
-    const stored = await chrome.storage.local.get([STORAGE_KEY, MINDMAP_KEY, AI_SETTINGS_KEY, CAPTURE_KEY]);
-    items = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY] : [];
+    const stored = await chrome.storage.local.get([STORAGE_KEY, MINDMAP_KEY, AI_SETTINGS_KEY, UI_SETTINGS_KEY, CAPTURE_KEY]);
+    items = readItems(stored[STORAGE_KEY]);
     mindMap = stored[MINDMAP_KEY] || null;
     savedSettings = stored[AI_SETTINGS_KEY] || {};
+    uiSettings = stored[UI_SETTINGS_KEY] || {};
     render();
     renderMindMap();
     renderSettings();
     if (stored[CAPTURE_KEY]) await consumeCapture(stored[CAPTURE_KEY]);
+  }
+
+  function readItems(value) {
+    return Array.isArray(value) ? value : [];
   }
 
   function bindEvents() {
@@ -54,7 +67,14 @@
     });
     els.save.addEventListener("click", saveEditor);
     els.cancelEdit.addEventListener("click", resetEditor);
-    els.search.addEventListener("input", render);
+    els.search.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = els.search.value.trim().toLocaleLowerCase();
+        renderList();
+        renderBulkbar();
+      }, SEARCH_DEBOUNCE_MS);
+    });
     els.conversationFilter.addEventListener("change", () => {
       activeConversation = els.conversationFilter.value;
       selectedIds.clear();
@@ -80,11 +100,13 @@
     els.analyze.addEventListener("click", analyzeQuestions);
     els.saveSettings.addEventListener("click", saveAiSettings);
     els.clearSettings.addEventListener("click", clearAiSettings);
+    els.saveFillPrefix.addEventListener("click", saveFillPrefix);
+    els.resetFillPrefix.addEventListener("click", resetFillPrefix);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       if (changes[STORAGE_KEY]) {
-        items = Array.isArray(changes[STORAGE_KEY].newValue) ? changes[STORAGE_KEY].newValue : [];
+        items = readItems(changes[STORAGE_KEY].newValue);
         render();
       }
       if (changes[MINDMAP_KEY]) {
@@ -95,13 +117,19 @@
         savedSettings = changes[AI_SETTINGS_KEY].newValue || {};
         renderSettings();
       }
+      if (changes[UI_SETTINGS_KEY]) {
+        uiSettings = changes[UI_SETTINGS_KEY].newValue || {};
+        renderSettings();
+      }
       if (changes[CAPTURE_KEY]?.newValue) consumeCapture(changes[CAPTURE_KEY].newValue);
     });
   }
 
   function showView(name) {
     document.querySelectorAll(".view-tab").forEach((tab) => {
-      tab.classList.toggle("is-active", tab.dataset.view === name);
+      const active = tab.dataset.view === name;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
     });
     document.querySelectorAll(".view").forEach((view) => {
       view.classList.toggle("is-active", view.id === `view-${name}`);
@@ -123,9 +151,21 @@
     showToast(selection ? "划词内容已追加到“相关上下文”" : "可以记录新疑问");
   }
 
+  // Storage writes can fail once the local quota is reached, and silently losing a
+  // record is worse than telling the user immediately.
   async function persistItems() {
-    await chrome.storage.local.set({ [STORAGE_KEY]: items });
-    render();
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: items });
+      render();
+      return true;
+    } catch (error) {
+      const detail = error?.message || "未知错误";
+      showToast(`保存失败：${detail}；请先导出备份并删除部分记录`, true);
+      const stored = await chrome.storage.local.get(STORAGE_KEY);
+      items = readItems(stored[STORAGE_KEY]);
+      render();
+      return false;
+    }
   }
 
   function render() {
@@ -144,6 +184,9 @@
       const count = items.filter((item) => item.status === key).length;
       const button = document.createElement("button");
       button.className = `status ${activeStatus === key ? "is-active" : ""}`;
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", activeStatus === key ? "true" : "false");
       button.style.setProperty("--status-color", config.color);
       button.textContent = `${config.label} ${count}`;
       button.addEventListener("click", () => {
@@ -190,14 +233,13 @@
   }
 
   function getVisibleItems() {
-    const query = els.search.value.trim().toLocaleLowerCase();
     return items
       .filter((item) => item.status === activeStatus)
       .filter((item) => activeConversation === "all" || conversationKeyForItem(item) === activeConversation)
       .filter((item) => activeTag === "all" || normalizeTags(item.tags).includes(activeTag))
-      .filter((item) => !query || [
+      .filter((item) => !searchQuery || [
         item.question, item.context, item.notes, item.site, conversationTitleForItem(item), normalizeTags(item.tags).join(" ")
-      ].some((value) => String(value || "").toLocaleLowerCase().includes(query)))
+      ].some((value) => String(value || "").toLocaleLowerCase().includes(searchQuery)))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }
 
@@ -207,7 +249,7 @@
     if (!visible.length) {
       const empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = els.search.value.trim() ? "没有匹配内容" : `还没有“${STATUS[activeStatus].label}”的问题`;
+      empty.textContent = searchQuery ? "没有匹配内容" : `还没有“${STATUS[activeStatus].label}”的问题`;
       els.list.appendChild(empty);
       return;
     }
@@ -237,7 +279,7 @@
   function createItem(item) {
     const card = document.createElement("article");
     card.className = "item";
-    card.style.setProperty("--status-color", STATUS[item.status]?.color || "#999");
+    card.style.setProperty("--status-color", STATUS[item.status]?.color || "#8d8797");
 
     const meta = document.createElement("div");
     meta.className = "item-meta";
@@ -247,17 +289,20 @@
       checkbox.checked = selectedIds.has(item.id);
       checkbox.setAttribute("aria-label", `选择：${item.question}`);
       checkbox.addEventListener("change", () => {
-        checkbox.checked ? selectedIds.add(item.id) : selectedIds.delete(item.id);
+        if (checkbox.checked) selectedIds.add(item.id);
+        else selectedIds.delete(item.id);
         renderBulkbar();
       });
       meta.appendChild(checkbox);
     }
-    const source = document.createElement(item.sourceUrl ? "a" : "span");
+    const sourceUrl = Store.safeHttpUrl(item.sourceUrl);
+    const source = document.createElement(sourceUrl ? "a" : "span");
     source.textContent = item.site || "其他网页";
-    if (item.sourceUrl) {
-      source.href = item.sourceUrl;
+    if (sourceUrl) {
+      source.href = sourceUrl;
       source.target = "_blank";
-      source.rel = "noreferrer";
+      source.rel = "noreferrer noopener";
+      source.title = sourceUrl;
     }
     const time = document.createElement("time");
     time.textContent = formatTime(item.updatedAt);
@@ -280,6 +325,17 @@
       notes.textContent = `笔记：${item.notes}`;
       card.appendChild(notes);
     }
+    const answerUrl = Store.safeHttpUrl(item.answerUrl);
+    if (answerUrl) {
+      const answer = document.createElement("a");
+      answer.className = "item-answer";
+      answer.textContent = "打开回答所在页面";
+      answer.href = answerUrl;
+      answer.target = "_blank";
+      answer.rel = "noreferrer noopener";
+      answer.title = answerUrl;
+      card.appendChild(answer);
+    }
     const itemTags = normalizeTags(item.tags);
     if (itemTags.length) {
       const tags = document.createElement("div");
@@ -287,6 +343,7 @@
       itemTags.forEach((tag) => {
         const chip = document.createElement("button");
         chip.className = "tag-chip";
+        chip.type = "button";
         chip.textContent = `# ${tag}`;
         chip.title = `只看标签：${tag}`;
         chip.addEventListener("click", () => {
@@ -317,6 +374,7 @@
   function actionButton(label, handler, kind = "") {
     const button = document.createElement("button");
     button.className = `small ${kind}`;
+    button.type = "button";
     button.textContent = label;
     button.addEventListener("click", handler);
     return button;
@@ -325,6 +383,10 @@
   async function saveEditor() {
     const question = els.question.value.trim();
     if (!question) return showToast("请先写下疑问", true);
+    const duplicate = Store.findDuplicate(items, question, editingId || "");
+    if (duplicate && !confirm(`已经记录过高度相似的问题（${STATUS[duplicate.status]?.label || duplicate.status}）：\n\n${duplicate.question}\n\n仍然保存这一条？`)) {
+      return;
+    }
     const now = new Date().toISOString();
     if (editingId) {
       const item = items.find((entry) => entry.id === editingId);
@@ -338,7 +400,7 @@
       items.push({
         id: crypto.randomUUID(), question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(), status: "pending", site: source.site,
-        sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl,
+        sourceType: source.sourceType, sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl,
         conversationId: source.conversationId, conversationTitle: source.conversationTitle,
         createdAt: now, updatedAt: now
       });
@@ -381,6 +443,10 @@
     item.status = status;
     item.updatedAt = now;
     item[`${status}At`] = now;
+    if (status === "answered" && !item.answerUrl) {
+      const answerUrl = await currentTabUrl();
+      if (answerUrl) item.answerUrl = answerUrl;
+    }
     selectedIds.delete(id);
     await persistItems();
   }
@@ -390,8 +456,7 @@
     items = items.filter((entry) => entry.id !== item.id);
     selectedIds.delete(item.id);
     if (editingId === item.id) resetEditor();
-    await persistItems();
-    showToast("已删除");
+    if (await persistItems()) showToast("已删除");
   }
 
   function renderBulkbar() {
@@ -402,6 +467,7 @@
     const selected = visible.filter((item) => selectedIds.has(item.id));
     els.selectAll.disabled = visible.length === 0;
     els.selectAll.textContent = visible.length && selected.length === visible.length ? "取消全选" : "全选当前";
+    els.selectAll.setAttribute("aria-pressed", visible.length && selected.length === visible.length ? "true" : "false");
     els.fillSelected.disabled = selected.length === 0;
     const verb = activeStatus === "inserted" ? "再次填入所选" : "填入所选";
     els.fillSelected.textContent = selected.length ? `${verb}（${selected.length}）` : verb;
@@ -410,8 +476,12 @@
   function toggleSelectAll() {
     const visible = getVisibleItems();
     const all = visible.length && visible.every((item) => selectedIds.has(item.id));
-    visible.forEach((item) => all ? selectedIds.delete(item.id) : selectedIds.add(item.id));
-    render();
+    visible.forEach((item) => {
+      if (all) selectedIds.delete(item.id);
+      else selectedIds.add(item.id);
+    });
+    renderList();
+    renderBulkbar();
   }
 
   async function fillItems(targetItems) {
@@ -425,6 +495,7 @@
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: "QQ_APPEND_QUESTIONS",
+        prefix: fillPrefix(),
         items: targetItems.map(({ id, question }) => ({ id, question }))
       });
       if (!response?.ok) throw new Error(response?.error || "填入失败");
@@ -437,8 +508,7 @@
         item.updatedAt = now;
         selectedIds.delete(item.id);
       });
-      await persistItems();
-      showToast(`已追加 ${targetItems.length} 条；左侧已有输入未被覆盖`);
+      if (await persistItems()) showToast(`已追加 ${targetItems.length} 条；左侧已有输入未被覆盖`);
     } catch (error) {
       showToast(error.message || "无法连接当前页面；更新扩展后请刷新该页面", true);
     }
@@ -458,7 +528,7 @@
       showToast("思维导图已生成");
     } catch (error) {
       showToast(error.message || "智能分析失败", true);
-      if (/配置|Base URL|API Key/.test(error.message || "")) showView("settings");
+      if (/配置|Base URL|API Key|模型/.test(error.message || "")) showView("settings");
     } finally {
       els.analyze.disabled = false;
       els.analyze.textContent = mindMap ? "重新分析" : "生成思维导图";
@@ -507,7 +577,7 @@
     (Array.isArray(branch?.questions) ? branch.questions : []).forEach((question) => {
       const line = document.createElement("p");
       line.className = "map-question";
-      line.textContent = typeof question === "string" ? question : question.question;
+      line.textContent = typeof question === "string" ? question : question?.question || "";
       node.appendChild(line);
     });
     if (Array.isArray(branch?.children) && branch.children.length) {
@@ -519,14 +589,32 @@
     return node;
   }
 
+  function exportScopeItems() {
+    const scope = els.exportScope.value;
+    if (scope === "filtered") return getVisibleItems();
+    if (scope === "selected") return getVisibleItems().filter((item) => selectedIds.has(item.id));
+    return items;
+  }
+
+  function exportScopeLabel() {
+    return els.exportScope.selectedOptions[0]?.textContent || "全部记录";
+  }
+
+  // A partial export carries a mind map pruned to the exported questions.
+  function exportScopeMindMap(scoped) {
+    if (!mindMap) return null;
+    return els.exportScope.value === "all" ? mindMap : Store.filterMindMap(mindMap, scoped);
+  }
+
   async function exportWord() {
-    if (!items.length) return showToast("还没有可导出的内容", true);
+    const scoped = exportScopeItems();
+    if (!scoped.length) return showToast(`当前范围（${exportScopeLabel()}）没有可导出的内容`, true);
     if (!globalThis.QuestionQueueDocx) return showToast("Word 导出模块未加载", true);
     els.word.disabled = true;
     try {
-      const blob = await globalThis.QuestionQueueDocx.build(items, mindMap, "blob");
+      const blob = await globalThis.QuestionQueueDocx.build(scoped, exportScopeMindMap(scoped), "blob");
       downloadBlob(blob, `追问簿-${new Date().toISOString().slice(0, 10)}.docx`);
-      showToast("Word 文档已导出");
+      showToast(`Word 文档已导出（${scoped.length} 条）`);
     } catch (error) {
       showToast(`Word 导出失败：${error.message}`, true);
     } finally {
@@ -535,12 +623,18 @@
   }
 
   function exportJson() {
+    const scoped = exportScopeItems();
+    if (!scoped.length) return showToast(`当前范围（${exportScopeLabel()}）没有可导出的内容`, true);
     const payload = JSON.stringify({
-      schemaVersion: 5, exportedAt: new Date().toISOString(), mindMap, items
+      schemaVersion: 6,
+      exportedAt: new Date().toISOString(),
+      scope: els.exportScope.value,
+      mindMap: exportScopeMindMap(scoped),
+      items: scoped
     }, null, 2);
     downloadBlob(new Blob([payload], { type: "application/json" }),
       `question-queue-${new Date().toISOString().slice(0, 10)}.json`);
-    showToast("已导出备份");
+    showToast(`已导出 ${scoped.length} 条备份`);
   }
 
   async function importJson(event) {
@@ -549,19 +643,21 @@
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      const incoming = Array.isArray(data) ? data : data.items;
+      const incoming = Array.isArray(data) ? data : data?.items;
       if (!Array.isArray(incoming)) throw new Error("Invalid data");
-      const byId = new Map(items.map((item) => [item.id, item]));
-      incoming.forEach((item) => {
-        if (item?.id && item?.question && STATUS[item.status]) byId.set(item.id, item);
-      });
-      items = Array.from(byId.values());
-      if (!Array.isArray(data) && data.mindMap?.branches) {
+      const result = Store.mergeImportedItems(items, incoming);
+      if (!result.added && !result.replaced) {
+        showToast(`导入完成：没有可用记录，已跳过 ${result.skipped} 条`, true);
+        return;
+      }
+      items = result.items;
+      if (!Array.isArray(data) && data?.mindMap?.branches) {
         mindMap = data.mindMap;
         await chrome.storage.local.set({ [MINDMAP_KEY]: mindMap });
       }
-      await persistItems();
-      showToast(`已合并导入，共 ${items.length} 条`);
+      if (await persistItems()) {
+        showToast(`导入完成：新增 ${result.added}，更新 ${result.replaced}，跳过 ${result.skipped}`);
+      }
     } catch {
       showToast("导入失败：文件格式不正确", true);
     }
@@ -576,31 +672,56 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function fillPrefix() {
+    const custom = String(uiSettings.fillPrefix ?? "").trim();
+    return custom || Store.DEFAULT_FILL_PREFIX;
+  }
+
   function renderSettings() {
     els.baseUrl.value = savedSettings.baseUrl || "";
+    els.model.value = savedSettings.model || "";
+    els.model.placeholder = DEFAULT_MODEL;
     els.apiKey.value = "";
     els.apiKey.placeholder = savedSettings.apiKey ? "已保存；留空则不修改" : "请输入重新生成的 API Key";
     els.settingsState.textContent = savedSettings.apiKey && savedSettings.baseUrl
-      ? "已配置 qwen3.8-max" : "尚未配置";
+      ? `已配置模型 ${savedSettings.model || DEFAULT_MODEL}`
+      : "尚未配置";
+    els.fillPrefix.value = uiSettings.fillPrefix ?? Store.DEFAULT_FILL_PREFIX;
   }
 
   async function saveAiSettings() {
     const baseUrl = els.baseUrl.value.trim().replace(/\/+$/, "");
     const apiKey = els.apiKey.value.trim() || savedSettings.apiKey || "";
+    const model = els.model.value.trim() || DEFAULT_MODEL;
     if (!isAllowedBaseUrl(baseUrl)) return showToast("请填写阿里云百炼官方 Base URL", true);
     if (!apiKey) return showToast("请填写重新生成的 API Key", true);
-    savedSettings = { baseUrl, apiKey, model: "qwen3.8-max", updatedAt: new Date().toISOString() };
+    savedSettings = { baseUrl, apiKey, model, updatedAt: new Date().toISOString() };
     await chrome.storage.local.set({ [AI_SETTINGS_KEY]: savedSettings });
     renderSettings();
     showToast("AI 设置已保存");
   }
 
   async function clearAiSettings() {
-    if (!confirm("清除本机保存的千问 Base URL 和 API Key？")) return;
+    if (!confirm("清除本机保存的千问 Base URL、模型名和 API Key？")) return;
     savedSettings = {};
     await chrome.storage.local.remove(AI_SETTINGS_KEY);
     renderSettings();
     showToast("AI 设置已清除");
+  }
+
+  async function saveFillPrefix() {
+    const value = els.fillPrefix.value.trim();
+    uiSettings = { ...uiSettings, fillPrefix: value };
+    await chrome.storage.local.set({ [UI_SETTINGS_KEY]: uiSettings });
+    renderSettings();
+    showToast(value ? "填入前缀已保存" : "已改为只填编号，不带前缀");
+  }
+
+  async function resetFillPrefix() {
+    uiSettings = { ...uiSettings, fillPrefix: Store.DEFAULT_FILL_PREFIX };
+    await chrome.storage.local.set({ [UI_SETTINGS_KEY]: uiSettings });
+    renderSettings();
+    showToast("填入前缀已恢复默认");
   }
 
   function isAllowedBaseUrl(value) {
@@ -611,6 +732,15 @@
         (url.hostname.endsWith(".maas.aliyuncs.com") || url.hostname === "dashscope.aliyuncs.com");
     } catch {
       return false;
+    }
+  }
+
+  async function currentTabUrl() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return Store.safeHttpUrl(tab?.url);
+    } catch {
+      return "";
     }
   }
 
@@ -630,7 +760,7 @@
     const derived = Sites.deriveSourceMeta({ url: source.sourceUrl || "", title: source.sourceTitle || "" });
     const site = source.site || derived.site;
     const sourceTitle = String(source.sourceTitle || derived.sourceTitle || "");
-    const sourceUrl = String(source.sourceUrl || derived.sourceUrl || "");
+    const sourceUrl = Store.safeHttpUrl(source.sourceUrl || derived.sourceUrl);
     const sourceType = source.sourceType || derived.sourceType;
     return {
       site, sourceType, sourceTitle, sourceUrl,
@@ -648,23 +778,23 @@
   }
 
   function conversationKey(url, title, site) {
-    const cleanTitle = cleanConversationTitle(title, site);
-    return Sites.sourceKey(url, cleanTitle, site);
+    return Sites.sourceKey(url, cleanConversationTitle(title, site), site);
   }
 
   function cleanConversationTitle(title, site) {
     const value = Sites.cleanTitle(title, site);
-    if (!value || value.toLocaleLowerCase() === String(site || "").toLocaleLowerCase()) return site ? `${site} 未命名来源` : "未命名来源";
+    if (!value || value.toLocaleLowerCase() === String(site || "").toLocaleLowerCase()) {
+      return site ? `${site} 未命名来源` : "未命名来源";
+    }
     return value;
   }
 
   function parseTags(value) {
-    return normalizeTags(String(value || "").split(/[,，;；\n]+/));
+    return Store.parseTags(value);
   }
 
   function normalizeTags(value) {
-    const list = Array.isArray(value) ? value : (value ? [value] : []);
-    return Array.from(new Set(list.map((tag) => String(tag).trim().replace(/^#\s*/, "")).filter(Boolean))).slice(0, 20);
+    return Store.normalizeTags(value);
   }
 
   function hostname(url) {
@@ -684,6 +814,6 @@
     els.toast.classList.toggle("is-error", error);
     els.toast.classList.add("is-visible");
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => els.toast.classList.remove("is-visible"), 2800);
+    showToast.timer = setTimeout(() => els.toast.classList.remove("is-visible"), 3000);
   }
 })();

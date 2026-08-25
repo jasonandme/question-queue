@@ -18,16 +18,24 @@
 ## 提交前检查
 
 ```bash
+node --check site-adapters.js
+node --check question-store.js
 node --check background.js
 node --check content.js
 node --check sidepanel.js
 node --check docx-export.js
+node scripts/test-site-adapters.mjs
+node scripts/test-question-store.mjs
 node scripts/validate.mjs
 ```
 
+`scripts/validate.mjs` 还会校验 manifest 版本与 CHANGELOG 顶部版本一致、图标齐全、内容脚本注入顺序、侧边栏引用的元素 id 存在，以及 README 是否覆盖了所有已适配站点与建议快捷键。因此修改站点列表、快捷键或界面 id 时，需要同步更新对应文档和 HTML。
+
 涉及输入框的改动还应验证原有草稿不会被覆盖、扩展不会自动发送消息，并且找不到输入框时会给出可理解的错误提示。
 
-涉及存储格式的改动应保持旧数据可读，并同步更新架构文档、导入导出和 Word 导出。
+涉及存储格式的改动应保持旧数据可读，并同步更新架构文档、`question-store.js` 的清洗白名单、导入导出和 Word 导出。数据层是纯函数，请为新行为补充 `scripts/test-question-store.mjs` 用例。
+
+发布新版本时同时更新 `manifest.json` 的 `version` 与 `CHANGELOG.md`，标签名使用 `v` 加相同版本号。
 
 ## Pull request
 
@@ -38,4 +46,3 @@ PR 描述应包含要解决的问题、实现取舍、权限和数据变化、�
 ## 站点适配
 
 选择器应从最具体到最通用排列，并只选择可见、可编辑的元素。不要依赖随机生成的 CSS 类名。新增站点时需要同步修改 manifest 权限和 README 支持列表，并说明为什么需要对应权限。
-

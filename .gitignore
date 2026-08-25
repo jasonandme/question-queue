@@ -6,3 +6,10 @@ Thumbs.db
 qa-*.cjs
 test-results/
 
+*.new.js
+*.new.json
+*.new.mjs
+*.new.md
+*.new.html
+*.new.css
+*.new.yml

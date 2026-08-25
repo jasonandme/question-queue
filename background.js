@@ -1,36 +1,48 @@
-importScripts("site-adapters.js");
+importScripts("site-adapters.js", "question-store.js");
 
 const STORAGE_KEY = "questionQueueItems";
 const CAPTURE_KEY = "questionQueueCaptureDraft";
+const AI_SETTINGS_KEY = "questionQueueAiSettings";
+const MENU_ID = "qq-capture-selection";
+const DEFAULT_MODEL = "qwen-max";
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: "qq-capture-selection",
-    title: "记录为追问：%s",
-    contexts: ["selection"]
-  });
+  installContextMenu();
   enableNativeSidePanel();
   updateBadge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  installContextMenu();
   enableNativeSidePanel();
   updateBadge();
 });
+
+// onInstalled also fires on update, so the menu is rebuilt instead of created blindly.
+function installContextMenu() {
+  chrome.contextMenus.removeAll(() => {
+    void chrome.runtime.lastError;
+    chrome.contextMenus.create({
+      id: MENU_ID,
+      title: "记录为追问：%s",
+      contexts: ["selection"]
+    }, () => void chrome.runtime.lastError);
+  });
+}
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id) openSidePanel(tab.id);
 });
 
 chrome.commands.onCommand.addListener((command) => {
-  if (command !== "toggle-question-queue") return;
+  if (command !== "open-question-queue") return;
   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
     if (tab?.id) openSidePanel(tab.id);
   });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== "qq-capture-selection" || !tab?.id) return;
+  if (info.menuItemId !== MENU_ID || !tab?.id) return;
   const source = await getTabSourceMeta(tab);
   await chrome.storage.local.set({
     [CAPTURE_KEY]: {
@@ -49,7 +61,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 function sendToTab(tabId, message) {
   chrome.tabs.sendMessage(tabId, message).catch(() => {
-    // The current page is outside the supported model sites.
+    // The current page is outside the supported sites.
   });
 }
 
@@ -60,8 +72,6 @@ async function updateBadge() {
   await chrome.action.setBadgeText({ text: count ? String(count) : "" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6D5EF7" });
 }
-
-const AI_SETTINGS_KEY = "questionQueueAiSettings";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "QQ_OPEN_SIDE_PANEL") {
@@ -117,7 +127,8 @@ async function analyzeMindMap(inputItems) {
   const settings = stored[AI_SETTINGS_KEY] || {};
   const apiKey = String(settings.apiKey || "").trim();
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
-  if (!apiKey || !baseUrl) throw new Error("请在侧边栏“设置”中配置新的千问 API Key 和 Base URL");
+  const model = String(settings.model || "").trim() || DEFAULT_MODEL;
+  if (!apiKey || !baseUrl) throw new Error("请在侧边栏“设置”中配置千问 Base URL 和 API Key");
 
   const safeItems = inputItems.slice(0, 300).map((item) => ({
     id: String(item.id || ""),
@@ -142,28 +153,32 @@ async function analyzeMindMap(inputItems) {
     JSON.stringify(safeItems)
   ].join("\n\n");
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "qwen3.8-max",
-      messages: [
-        { role: "system", content: "你是知识管理与学习复盘专家，擅长把问题整理成层级清晰的思维导图。" },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" },
-      enable_thinking: true,
-      temperature: 0.2,
-      max_tokens: 8000
-    })
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "你是知识管理与学习复盘专家，擅长把问题整理成层级清晰的思维导图。" },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 8000
+      })
+    });
+  } catch {
+    throw new Error("无法连接千问接口，请检查网络与 Base URL");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-    throw new Error(`千问请求失败：${detail}`);
+    throw new Error(`千问请求失败（模型 ${model}）：${detail}`);
   }
   const content = payload?.choices?.[0]?.message?.content;
   if (!content) throw new Error("千问没有返回可用内容");
