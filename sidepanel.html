@@ -23,12 +23,12 @@
     <section class="view is-active" id="view-queue" role="tabpanel" aria-label="清单">
       <section class="compose card">
         <label class="sr-only" for="question">疑问内容</label>
-        <textarea id="question" rows="3" placeholder="记录当前内容引发的新疑问…"></textarea>
+        <textarea id="question" rows="3" placeholder="写下疑问；划词右键会直接保存为笔记…"></textarea>
         <details id="details">
           <summary>补充上下文与学习笔记</summary>
           <label>
             相关上下文
-            <textarea id="context" rows="3" placeholder="在网页中划词后右键“记录为追问”，选中文字会自动放到这里"></textarea>
+            <textarea id="context" rows="3" placeholder="划词右键“保存到追问簿”，选中文字也会作为追问上下文保留"></textarea>
             <small>它保存“这个问题是由哪段内容引发的”，方便以后回看问题来源。</small>
           </label>
           <label>标签
@@ -39,7 +39,7 @@
         </details>
         <div class="row end">
           <button class="button ghost hidden" id="cancelEdit">取消编辑</button>
-          <button class="button primary" id="save">保存疑问</button>
+          <button class="button primary" id="save">加入追问</button>
         </div>
       </section>
       <nav class="statuses" id="statuses" role="tablist" aria-label="问题状态"></nav>

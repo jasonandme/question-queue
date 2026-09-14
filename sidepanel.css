@@ -50,7 +50,7 @@ small { display: block; margin-top: 4px; color: #8b8595; font-weight: 400; line-
 .primary { color: #fff; background: #6d5ef7; }
 .primary:hover:not(:disabled) { background: #5949e6; }
 .ghost { color: #625c6e; background: #efedf3; }
-.statuses { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; margin: 10px 0 7px; }
+.statuses { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; margin: 10px 0 7px; }
 .status {
   position: relative; padding: 8px 2px 9px; border: 0; border-radius: 9px;
   color: #77717f; background: transparent; font-size: 10px;
@@ -81,6 +81,8 @@ small { display: block; margin-top: 4px; color: #8b8595; font-weight: 400; line-
 .item-meta a { min-width: 0; overflow: hidden; color: #7167ba; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta time { margin-left: auto; }
 .item-question { margin: 8px 0 5px; color: #35313d; font-size: 13px; font-weight: 650; white-space: pre-wrap; }
+.item-note-title { margin: 8px 0 5px; color: #35313d; font-size: 13px; font-weight: 700; }
+.item-note-content { margin: 5px 0 0; color: #5f5969; font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
 .item-context, .item-notes { margin: 5px 0 0; color: #746e7c; font-size: 11px; white-space: pre-wrap; }
 .item-context { padding-left: 8px; border-left: 2px solid #ddd7e8; }
 .item-notes { color: #4f7561; }

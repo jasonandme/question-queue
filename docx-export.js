@@ -1,5 +1,6 @@
 ((root) => {
   const STATUS_LABELS = {
+    note: "笔记",
     pending: "待输入",
     inserted: "已输入",
     answered: "已回答",
@@ -29,7 +30,9 @@
     const body = [];
     body.push(paragraph("追问簿学习回顾", "Title"));
     body.push(paragraph(`导出时间：${new Date().toLocaleString("zh-CN")}`, "Subtitle"));
-    body.push(paragraph(`问题总数：${items.length}`, "Subtitle"));
+    const noteCount = items.filter((item) => item.kind === "note").length;
+    const questionCount = items.length - noteCount;
+    body.push(paragraph(`共 ${noteCount} 条笔记，${questionCount} 个问题`, "Subtitle"));
 
     if (mindMap?.branches?.length) {
       body.push(paragraph("思维导图", "Heading1"));
@@ -43,7 +46,7 @@
       if (!group.length) return;
       body.push(paragraph(`${label}（${group.length}）`, "Heading1"));
       group.forEach((item, index) => {
-        body.push(paragraph(`${index + 1}. ${item.question}`, "Heading2"));
+        body.push(paragraph(`${index + 1}. ${item.kind === "note" ? (item.title || "未命名笔记") : item.question}`, "Heading2"));
         const meta = [item.site, item.conversationTitle || item.sourceTitle, formatDate(item.updatedAt)]
           .filter(Boolean).join(" · ");
         if (meta) body.push(paragraph(meta, "Subtitle"));
@@ -53,7 +56,8 @@
         if (answerUrl) body.push(paragraph(`回答所在页面：${answerUrl}`, "Subtitle"));
         const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
         if (tags.length) body.push(paragraph(`标签：${tags.map((tag) => `#${tag}`).join("  ")}`, "Normal"));
-        if (item.context) body.push(paragraph(`相关上下文：${item.context}`, "Normal"));
+        if (item.kind === "note" && item.content) body.push(paragraph(item.content, "Normal"));
+        if (item.kind !== "note" && item.context) body.push(paragraph(`相关上下文：${item.context}`, "Normal"));
         if (item.notes) body.push(paragraph(`学习笔记：${item.notes}`, "Normal"));
       });
     });

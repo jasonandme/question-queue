@@ -1,8 +1,8 @@
 # 追问簿 · Question Queue
 
-一个面向大模型对话与知识学习网页的本地优先浏览器扩展。阅读文章或回答时随手记录疑问，保留原文和来源，随后在大模型对话中批量追问。
+一个把笔记与追问合成一条链路的本地优先浏览器扩展。划词后立即保存带章节标题的笔记，需要时再基于笔记追问，并可在大模型对话中批量填入。
 
-Question Queue is a local-first browser extension for collecting questions from articles and LLM responses, then appending them to a later prompt.
+Question Queue is a local-first browser extension that captures selected text as titled notes and turns any note into a follow-up question when needed.
 
 ## 为什么做这个扩展
 
@@ -16,13 +16,16 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 ## 功能
 
+- 划词右键一次即保存笔记，不需要再填写表单或点击保存。
+- 自动使用选中内容附近最近的上级标题作为笔记标题，无法识别时回退到文章或页面标题。
+- 笔记与追问在同一清单中管理，笔记卡片可直接“基于此笔记追问”。
 - Edge / Chrome 原生侧边栏，与文章或模型网页并排显示。
 - 网页右下角快捷按钮和 Alt+Shift+Q 快捷键，按钮上显示待输入数量。
-- 在 CSDN、知乎或模型回答中划词，通过右键菜单记录为追问。
+- 在任意可访问网页中划词，通过右键菜单立即保存为笔记；支持页面会提供更完整的来源信息。
 - 自动读取 CSDN、知乎的正文标题与规范链接，并移除常见分享追踪参数。
 - 知识学习网页只负责采集，大模型对话网页才允许一键填入，避免误写评论框。
 - 填入时只追加，不覆盖输入框里的已有文字，也不会自动发送。
-- 待输入、已输入、已回答、已掌握四种状态。
+- 笔记、待输入、已输入、已回答、已掌握五类视图。
 - 待输入和已输入记录均支持多选、批量填入与再次填入。
 - 保存时检测重复问题并提示，可自行决定是否继续保存。
 - 标记“已回答”会记下回答所在页面，卡片上可直接跳回。
@@ -82,18 +85,19 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 ## 使用
 
-### 记录问题
+### 记录笔记与问题
 
-- 点击工具栏图标、网页右下角问号，或按 Alt+Shift+Q。
-- 在侧边栏顶部写下问题。
+- 选中网页内容，右键选择“保存到追问簿”：笔记会立即保存，并自动采用最近的上级标题。
+- 若选区同时引发了问题，侧边栏已保留该段内容；直接输入问题并点击“加入追问”，操作步数与旧版一致。
+- 也可以点击工具栏图标、网页右下角问号或按 Alt+Shift+Q，直接写下问题。
 - 标签支持中文逗号、英文逗号、分号或换行分隔。
-- 点击“保存疑问”，记录进入“待输入”。
+- 点击“加入追问”，记录进入“待输入”。
 
 清单的浏览、编辑、筛选与导出都在侧边栏完成，网页里只保留快捷按钮，避免遮挡正文。
 
 ### 带入文章或回答上下文
 
-在 CSDN、知乎或模型回答中选中一段文字，右键选择“记录为追问”。选中的内容会追加到编辑器的“相关上下文”，用于说明疑问由哪段内容引发；连续划词不会覆盖之前的上下文。保存时会同时记录文章或对话的标题和链接。
+在网页中选中一段文字，右键选择“保存到追问簿”。选区会立刻成为笔记正文；扩展优先识别选区所在或之前最近的 H1-H6、ARIA heading 或常见章节标题，并将其用作笔记标题。识别失败时回退到文章或页面标题。侧边栏也会保留选区作为下一条追问的上下文。
 
 ### 批量填入
 
@@ -134,7 +138,7 @@ Question Queue is a local-first browser extension for collecting questions from 
 
 ## 数据与隐私
 
-- 问题、上下文、标签、笔记、状态和设置保存在 chrome.storage.local。
+- 笔记正文、问题、上下文、标签、状态和设置保存在 chrome.storage.local。
 - 项目没有同步服务器、统计脚本、广告 SDK 或错误追踪服务。
 - Word 文档在本机生成。
 - JSON 和 Word 导出不包含千问 API Key。
@@ -147,8 +151,9 @@ Question Queue is a local-first browser extension for collecting questions from 
 | 权限 | 用途 |
 | --- | --- |
 | storage | 保存问题、状态、标签、思维导图和用户设置 |
-| contextMenus | 提供“记录为追问”右键菜单 |
-| activeTab | 向当前模型页面追加选中的问题 |
+| contextMenus | 提供“保存到追问簿”划词右键菜单 |
+| activeTab | 在用户主动操作当前页面时读取选区并向模型输入框追加问题 |
+| scripting | 仅在用户点击划词右键菜单时识别选区附近的上级标题 |
 | sidePanel | 在浏览器原生侧边栏中显示清单 |
 | 模型站点访问权限 | 注入快捷按钮并识别当前输入框 |
 | CSDN、知乎访问权限 | 注入快捷入口，并读取当前文章标题与规范链接 |

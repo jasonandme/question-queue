@@ -7,6 +7,7 @@
   const SEARCH_DEBOUNCE_MS = 150;
   const DEFAULT_MODEL = "qwen-max";
   const STATUS = {
+    note: { label: "笔记", color: "#596579" },
     pending: { label: "待输入", color: "#7C5CFC" },
     inserted: { label: "已输入", color: "#168AAD" },
     answered: { label: "已回答", color: "#E58A26" },
@@ -58,7 +59,7 @@
   }
 
   function readItems(value) {
-    return Array.isArray(value) ? value : [];
+    return (Array.isArray(value) ? value : []).map(Store.sanitizeItem).filter(Boolean);
   }
 
   function bindEvents() {
@@ -145,10 +146,17 @@
       els.details.open = true;
     }
     captureMeta = draft || null;
+    if (draft?.autoSaved) {
+      activeStatus = "note";
+      selectedIds.clear();
+      render();
+    }
     showView("queue");
     await chrome.storage.local.remove(CAPTURE_KEY);
     setTimeout(() => els.question.focus(), 30);
-    showToast(selection ? "划词内容已追加到“相关上下文”" : "可以记录新疑问");
+    showToast(draft?.autoSaved
+      ? `${draft.wasDuplicate ? "这段内容已在" : "已保存到"}“${draft.sectionTitle || "笔记"}”；可直接输入追问`
+      : (selection ? "划词内容已追加到“相关上下文”" : "可以记录新疑问"));
   }
 
   // Storage writes can fail once the local quota is reached, and silently losing a
@@ -238,7 +246,8 @@
       .filter((item) => activeConversation === "all" || conversationKeyForItem(item) === activeConversation)
       .filter((item) => activeTag === "all" || normalizeTags(item.tags).includes(activeTag))
       .filter((item) => !searchQuery || [
-        item.question, item.context, item.notes, item.site, conversationTitleForItem(item), normalizeTags(item.tags).join(" ")
+        item.title, item.content, item.question, item.context, item.notes, item.site,
+        conversationTitleForItem(item), normalizeTags(item.tags).join(" ")
       ].some((value) => String(value || "").toLocaleLowerCase().includes(searchQuery)))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }
@@ -308,12 +317,22 @@
     time.textContent = formatTime(item.updatedAt);
     meta.append(source, time);
 
-    const question = document.createElement("p");
-    question.className = "item-question";
-    question.textContent = item.question;
-    card.append(meta, question);
+    if (item.kind === "note") {
+      const title = document.createElement("p");
+      title.className = "item-note-title";
+      title.textContent = item.title || "未命名笔记";
+      const content = document.createElement("p");
+      content.className = "item-note-content";
+      content.textContent = item.content || item.context || "";
+      card.append(meta, title, content);
+    } else {
+      const question = document.createElement("p");
+      question.className = "item-question";
+      question.textContent = item.question;
+      card.append(meta, question);
+    }
 
-    if (item.context) {
+    if (item.kind !== "note" && item.context) {
       const context = document.createElement("p");
       context.className = "item-context";
       context.textContent = item.context;
@@ -358,6 +377,7 @@
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
+    if (item.kind === "note") actions.appendChild(actionButton("基于此笔记追问", () => askFromNote(item), "accent"));
     if (item.status === "pending") actions.appendChild(actionButton("填入", () => fillItems([item])));
     if (item.status === "inserted") {
       actions.appendChild(actionButton("再次填入", () => fillItems([item])));
@@ -382,26 +402,33 @@
 
   async function saveEditor() {
     const question = els.question.value.trim();
-    if (!question) return showToast("请先写下疑问", true);
-    const duplicate = Store.findDuplicate(items, question, editingId || "");
+    const editingItem = editingId ? items.find((entry) => entry.id === editingId) : null;
+    const editingNote = editingItem?.kind === "note";
+    if (!question) return showToast(editingNote ? "请填写笔记标题" : "请先写下疑问", true);
+    const duplicate = editingNote ? null : Store.findDuplicate(items, question, editingId || "");
     if (duplicate && !confirm(`已经记录过高度相似的问题（${STATUS[duplicate.status]?.label || duplicate.status}）：\n\n${duplicate.question}\n\n仍然保存这一条？`)) {
       return;
     }
     const now = new Date().toISOString();
     if (editingId) {
-      const item = items.find((entry) => entry.id === editingId);
-      if (item) Object.assign(item, {
-        question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
+      const item = editingItem;
+      if (item?.kind === "note") Object.assign(item, {
+        title: question, content: els.context.value.trim(), tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(), updatedAt: now
       });
+      else if (item) Object.assign(item, {
+          question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
+          notes: els.notes.value.trim(), updatedAt: now
+        });
       showToast("已更新");
     } else {
       const source = normalizeSourceMeta(captureMeta || await currentTabMeta());
       items.push({
-        id: crypto.randomUUID(), question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
+        id: crypto.randomUUID(), kind: "question", question, context: els.context.value.trim(), tags: parseTags(els.tags.value),
         notes: els.notes.value.trim(), status: "pending", site: source.site,
         sourceType: source.sourceType, sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl,
         conversationId: source.conversationId, conversationTitle: source.conversationTitle,
+        parentNoteId: captureMeta?.noteId || "",
         createdAt: now, updatedAt: now
       });
       activeStatus = "pending";
@@ -413,26 +440,43 @@
 
   function editItem(item) {
     editingId = item.id;
-    els.question.value = item.question || "";
-    els.context.value = item.context || "";
+    els.question.value = item.kind === "note" ? (item.title || "") : (item.question || "");
+    els.context.value = item.kind === "note" ? (item.content || item.context || "") : (item.context || "");
     els.tags.value = normalizeTags(item.tags).join(", ");
     els.notes.value = item.notes || "";
-    els.details.open = Boolean(item.context || item.notes);
-    els.save.textContent = "保存修改";
+    els.details.open = item.kind === "note" || Boolean(item.context || item.notes);
+    els.save.textContent = item.kind === "note" ? "保存笔记" : "保存修改";
+    els.question.placeholder = item.kind === "note" ? "笔记标题" : "写下疑问…";
     els.cancelEdit.classList.remove("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
     els.question.focus();
+  }
+
+  function askFromNote(item) {
+    resetEditor();
+    els.context.value = item.content || item.context || "";
+    els.tags.value = normalizeTags(item.tags).join(", ");
+    els.details.open = true;
+    captureMeta = {
+      noteId: item.id, site: item.site, sourceType: item.sourceType,
+      sourceTitle: item.sourceTitle, sourceUrl: item.sourceUrl,
+      conversationId: item.conversationId, conversationTitle: item.conversationTitle
+    };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    els.question.focus();
+    showToast(`正在基于“${item.title || "该笔记"}”追问`);
   }
 
   function resetEditor() {
     editingId = null;
     captureMeta = null;
     els.question.value = "";
+    els.question.placeholder = "写下疑问；划词右键会直接保存为笔记…";
     els.context.value = "";
     els.tags.value = "";
     els.notes.value = "";
     els.details.open = false;
-    els.save.textContent = "保存疑问";
+    els.save.textContent = "加入追问";
     els.cancelEdit.classList.add("hidden");
   }
 
@@ -452,7 +496,7 @@
   }
 
   async function deleteItem(item) {
-    if (!confirm(`删除这条疑问？\n\n${item.question}`)) return;
+    if (!confirm(`删除这条${item.kind === "note" ? "笔记" : "疑问"}？\n\n${item.title || item.question}`)) return;
     items = items.filter((entry) => entry.id !== item.id);
     selectedIds.delete(item.id);
     if (editingId === item.id) resetEditor();
@@ -515,14 +559,15 @@
   }
 
   async function analyzeQuestions() {
-    if (!items.length) return showToast("还没有可分析的问题", true);
+    const questions = items.filter((item) => item.kind !== "note" && item.question);
+    if (!questions.length) return showToast("还没有可分析的问题", true);
     els.analyze.disabled = true;
     els.analyze.textContent = "千问分析中…";
     try {
-      const safeItems = items.map(({ id, question, status }) => ({ id, question, status }));
+      const safeItems = questions.map(({ id, question, status }) => ({ id, question, status }));
       const response = await chrome.runtime.sendMessage({ type: "QQ_ANALYZE_MINDMAP", items: safeItems });
       if (!response?.ok) throw new Error(response?.error || "智能分析失败");
-      mindMap = { ...response.mindMap, generatedAt: new Date().toISOString(), sourceCount: items.length };
+      mindMap = { ...response.mindMap, generatedAt: new Date().toISOString(), sourceCount: questions.length };
       await chrome.storage.local.set({ [MINDMAP_KEY]: mindMap });
       renderMindMap();
       showToast("思维导图已生成");

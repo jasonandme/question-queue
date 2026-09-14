@@ -23,6 +23,16 @@ assert.equal(Store.sanitizeItem([{ id: "1", question: "q" }]), null);
 assert.equal(Store.sanitizeItem({ question: "缺少 id" }), null);
 assert.equal(Store.sanitizeItem({ id: "1", question: "   " }), null);
 
+const note = Store.sanitizeItem({
+  id: "note-1", kind: "note", status: "pending", title: "微任务", content: "Promise 回调进入微任务队列",
+  sourceUrl: "https://example.com/article"
+});
+assert.equal(note.kind, "note");
+assert.equal(note.status, "note");
+assert.equal(note.title, "微任务");
+assert.equal(note.content, "Promise 回调进入微任务队列");
+assert.equal(Store.sanitizeItem({ id: "empty-note", kind: "note" }), null);
+
 const sanitized = Store.sanitizeItem({
   id: "1",
   question: " 事件循环怎么调度微任务？ ",
@@ -83,6 +93,15 @@ assert.equal(Store.findDuplicate(existing, "Event Loop"), null);
 assert.equal(Store.findDuplicate(existing, "事件循环怎么调度微任务？", "1"), null);
 assert.equal(Store.findDuplicate(existing, "   "), null);
 assert.equal(Store.findDuplicate([{ id: "1", question: "Event Loop?" }], "event loop")?.id, "1");
+assert.equal(Store.findDuplicateNote([note], {
+  kind: "note", content: "Promise 回调进入微任务队列。", sourceUrl: "https://example.com/article"
+})?.id, "note-1");
+assert.equal(Store.findDuplicateNote([note], {
+  kind: "note", content: "另一段内容", sourceUrl: "https://example.com/article"
+}), null);
+assert.equal(Store.findDuplicateNote([note], {
+  kind: "note", content: "Promise 回调进入微任务队列", sourceUrl: "https://example.com/other"
+}), null);
 
 // Fill text: one question stays raw, several get the prefix plus numbering.
 assert.equal(Store.buildFillText([]), "");
@@ -100,6 +119,7 @@ assert.equal(
   "自定义提示\n\n1. 第一条\n\n2. 第二条"
 );
 assert.equal(Store.buildFillText([{ question: "  " }, { question: "有效" }]), "有效");
+assert.equal(Store.buildFillText([{ kind: "note", title: "笔记", content: "正文" }, { question: "有效" }]), "有效");
 
 // A scoped export keeps only the mind map branches whose questions are exported.
 const fullMap = {

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "追问簿 · Question Queue",
-  "version": "0.6.0",
-  "description": "在大模型对话与知识学习网页中随手记录疑问，保留文章上下文，并在下一轮对话中批量追问。",
-  "permissions": ["storage", "contextMenus", "activeTab", "sidePanel"],
+  "version": "0.7.0",
+  "description": "划词即存为带章节标题的笔记，也可基于笔记继续追问，并在大模型对话中批量填入。",
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",

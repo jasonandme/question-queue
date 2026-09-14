@@ -49,7 +49,7 @@ for (const script of contentScripts) {
   }
 }
 
-const allowedPermissions = new Set(["storage", "contextMenus", "activeTab", "sidePanel"]);
+const allowedPermissions = new Set(["storage", "contextMenus", "activeTab", "scripting", "sidePanel"]);
 for (const permission of manifest.permissions || []) {
   if (!allowedPermissions.has(permission)) throw new Error(`Unexpected permission: ${permission}`);
 }

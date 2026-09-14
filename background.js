@@ -24,7 +24,7 @@ function installContextMenu() {
     void chrome.runtime.lastError;
     chrome.contextMenus.create({
       id: MENU_ID,
-      title: "记录为追问：%s",
+      title: "保存到追问簿：%s",
       contexts: ["selection"]
     }, () => void chrome.runtime.lastError);
   });
@@ -44,16 +44,69 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_ID || !tab?.id) return;
   const source = await getTabSourceMeta(tab);
+  const selectionMeta = await getSelectionMeta(tab.id, info.frameId);
+  const selection = String(selectionMeta.selection || info.selectionText || "").trim();
+  if (!selection) return;
+  const now = new Date().toISOString();
+  const title = String(selectionMeta.sectionTitle || source.sourceTitle || "未命名笔记").trim();
+  const stored = await chrome.storage.local.get(STORAGE_KEY);
+  const items = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY] : [];
+  const note = QuestionQueueStore.sanitizeItem({
+    id: crypto.randomUUID(), kind: "note", status: "note", title, content: selection,
+    site: source.site, sourceType: source.sourceType, sourceTitle: source.sourceTitle,
+    sourceUrl: source.sourceUrl, conversationId: source.sourceId,
+    conversationTitle: source.sourceTitle, createdAt: now, updatedAt: now
+  });
+  const duplicate = QuestionQueueStore.findDuplicateNote(items, note);
+  if (!duplicate) {
+    items.push(note);
+    await chrome.storage.local.set({ [STORAGE_KEY]: items });
+  }
   await chrome.storage.local.set({
     [CAPTURE_KEY]: {
-      selection: info.selectionText || "",
+      selection,
+      sectionTitle: title,
+      noteId: duplicate?.id || note.id,
+      autoSaved: true,
+      wasDuplicate: Boolean(duplicate),
       ...source,
-      capturedAt: new Date().toISOString()
+      capturedAt: now
     }
   });
   const opened = await openSidePanel(tab.id);
   if (!opened) sendToTab(tab.id, { type: "QQ_CAPTURE", selection: info.selectionText || "" });
 });
+
+async function getSelectionMeta(tabId, frameId = 0) {
+  if (!chrome.scripting?.executeScript) return {};
+  try {
+    const [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      func: () => {
+        const selected = window.getSelection();
+        const selection = String(selected || "").trim();
+        const node = selected?.rangeCount ? selected.getRangeAt(0).commonAncestorContainer : null;
+        const start = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+        const headingSelector = "h1,h2,h3,h4,h5,h6,[role='heading'],.article-title,.section-title,.chapter-title";
+        const clean = (element) => String(element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300);
+        let heading = start?.closest?.(headingSelector) || null;
+        if (!heading && start) {
+          const scope = start.closest("article,main,section,[role='main']") || document.body;
+          const candidates = Array.from(scope.querySelectorAll(headingSelector));
+          heading = candidates.filter((candidate) => {
+            if (!candidate.isConnected || !clean(candidate)) return false;
+            const relation = candidate.compareDocumentPosition(start);
+            return Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING) || candidate.contains(start);
+          }).at(-1) || null;
+        }
+        return { selection, sectionTitle: clean(heading) };
+      }
+    });
+    return result || {};
+  } catch {
+    return {};
+  }
+}
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[STORAGE_KEY]) updateBadge();

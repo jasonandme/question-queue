@@ -32,16 +32,19 @@ JSZip 与 `docx-export.js` 只在侧边栏加载，不再注入匹配到的网�
 
 ## Storage schema
 
-主数据位于 `chrome.storage.local` 的 `questionQueueItems`。
+主数据位于 `chrome.storage.local` 的 `questionQueueItems`。记录分为 `note` 与 `question`；旧记录缺少 `kind` 时按问题兼容。
 
 ```js
 {
   id: "uuid",
+  kind: "note | question",
+  title: "笔记标题（问题可为空）",
+  content: "笔记正文（问题可为空）",
   question: "...",
   context: "...",
   notes: "...",
   tags: ["research", "review"],
-  status: "pending | inserted | answered | learned",
+  status: "note | pending | inserted | answered | learned",
   site: "CSDN",
   sourceType: "article | chat | page",
   sourceTitle: "Article or conversation title",
@@ -53,6 +56,8 @@ JSZip 与 `docx-export.js` 只在侧边栏加载，不再注入匹配到的网�
   updatedAt: "ISO timestamp"
 }
 ```
+
+划词菜单属于一次用户主动操作。后台用 `activeTab + scripting` 在当前 frame 中读取选区，并依次查找：选区所在标题、同一正文容器内位于选区之前且最近的标题、文章或页面标题。笔记立即写入本地存储；同一来源的相同选区会去重。随后侧边栏继续保留该选区，用户若输入问题，会创建带 `parentNoteId` 的追问。
 
 旧记录缺少新增字段时，界面采用惰性兼容：标签视为空数组，来源类型回退为 `page`，对话字段从来源 URL 和标题推导。
 
